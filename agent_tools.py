@@ -587,8 +587,12 @@ if __name__ == "__main__":
         res = moodle_open_pdf(url)
         print(json.dumps(res, indent=2))
 
+    elif cmd in ("/install", "install", "/configure", "configure"):
+        import install
+        install.main()
+
     else:
         print(json.dumps({
             "status": "error",
-            "message": f"Unknown command '{cmd}'. Available commands: /setup, /sync, /list, /ask, /quiz, /open, /change-sync, /add-custom-url, /remove-custom-url, /list-custom-urls"
+            "message": f"Unknown command '{cmd}'. Available commands: /setup, /sync, /list, /ask, /quiz, /open, /change-sync, /add-custom-url, /remove-custom-url, /list-custom-urls, /install"
         }, indent=2))

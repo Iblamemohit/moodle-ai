@@ -1,0 +1,10 @@
+{
+  "mcpServers": {
+    "moodle-study-agent": {
+      "command": "/Users/mohit/.local/share/uv/python/cpython-3.14.6-macos-aarch64-none/bin/python3.14",
+      "args": [
+        "/Users/mohit/Documents/moodle-study-tool/mcp_server.py"
+      ]
+    }
+  }
+}
