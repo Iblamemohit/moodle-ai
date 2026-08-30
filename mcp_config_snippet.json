@@ -1,0 +1,10 @@
+{
+  "mcpServers": {
+    "moodle-study-agent": {
+      "command": "/Users/mohit/Documents/moodle-study-tool/.venv/bin/python",
+      "args": [
+        "/Users/mohit/Documents/moodle-study-tool/mcp_server.py"
+      ]
+    }
+  }
+}

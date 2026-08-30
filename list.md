@@ -1,0 +1,100 @@
+# 📚 Moodle Knowledge Base Document Index
+
+*Last Updated: 2026-08-30 16:42:53*
+**Total Semesters:** 2 | **Total Courses:** 9 | **Total Files:** 55 | **Total Slides/Pages:** 880
+
+---
+
+## 🏛️ Custom Sources
+
+### 📖 Mozilla_PDF_API
+| Document Name | Type | Size | Pages | Status |
+| :--- | :---: | :---: | :---: | :---: |
+| [basicapi.pdf](open-preview:///Users/mohit/Documents/moodle-study-tool/output/Custom_Sources/Mozilla_PDF_API/basicapi.pdf#page=1) | PDF | 103.3 KB | 3 | ✅ Parsed & Indexed |
+
+### 📖 PDF_Object_Sample
+| Document Name | Type | Size | Pages | Status |
+| :--- | :---: | :---: | :---: | :---: |
+| [sample.pdf](open-preview:///Users/mohit/Documents/moodle-study-tool/output/Custom_Sources/PDF_Object_Sample/sample.pdf#page=1) | PDF | 18.4 KB | 1 | ✅ Parsed & Indexed |
+
+## 🏛️ Semester 2601
+
+### 📖 2601-CVL243A
+| Document Name | Type | Size | Pages | Status |
+| :--- | :---: | :---: | :---: | :---: |
+| [IS 456_2000_AMD5_Reff2021 Plain and RCC Code of Practise.pdf](open-preview:///Users/mohit/Documents/moodle-study-tool/output/Semester_2601/2601-CVL243A/Resources/IS%20456_2000_AMD5_Reff2021%20Plain%20and%20RCC%20Code%20of%20Practise.pdf#page=1) | PDF | 5.0 MB | 127 | ✅ Parsed & Indexed |
+| [IS 875_1_1987_Reff2018 Dead Loads - Unit weights of building materials.pdf](open-preview:///Users/mohit/Documents/moodle-study-tool/output/Semester_2601/2601-CVL243A/Resources/IS%20875_1_1987_Reff2018%20Dead%20Loads%20-%20Unit%20weights%20of%20building%20materials.pdf#page=1) | PDF | 1.1 MB | 39 | ✅ Parsed & Indexed |
+| [IS 875_2_1987_Reff2018 Imposed Loads - Design Loads for buildings and structures.pdf](open-preview:///Users/mohit/Documents/moodle-study-tool/output/Semester_2601/2601-CVL243A/Resources/IS%20875_2_1987_Reff2018%20Imposed%20Loads%20-%20Design%20Loads%20for%20buildings%20and%20structures.pdf#page=1) | PDF | 915.0 KB | 20 | ✅ Parsed & Indexed |
+| [Papers-20260830.zip](open-preview:///Users/mohit/Documents/moodle-study-tool/output/Semester_2601/2601-CVL243A/Resources/Papers%20%20Folder/Papers-20260830.zip#page=1) | ZIP | 36.1 KB | 1 | ⏳ Pending Parse |
+| [Structural%20Drawings-20260830.zip](open-preview:///Users/mohit/Documents/moodle-study-tool/output/Semester_2601/2601-CVL243A/Resources/Structural%20Drawings%20%20Folder/Structural%2520Drawings-20260830.zip#page=1) | ZIP | 36.1 KB | 1 | ⏳ Pending Parse |
+| [Lec08 - Cracking Strength.pdf](open-preview:///Users/mohit/Documents/moodle-study-tool/output/Semester_2601/2601-CVL243A/Chapter%203-%20Flexural%20Behaviour%20of%20Beam%20-%20Estimation%20of%20Strength/Lec08%20-%20Cracking%20Strength.pdf#page=1) | PDF | 2.0 MB | 3 | ✅ Parsed & Indexed |
+| [Lec09 - Yield Strength.pdf](open-preview:///Users/mohit/Documents/moodle-study-tool/output/Semester_2601/2601-CVL243A/Chapter%203-%20Flexural%20Behaviour%20of%20Beam%20-%20Estimation%20of%20Strength/Lec09%20-%20Yield%20Strength.pdf#page=1) | PDF | 1.6 MB | 3 | ✅ Parsed & Indexed |
+| [Lec00 - Introduction.pdf](open-preview:///Users/mohit/Documents/moodle-study-tool/output/Semester_2601/2601-CVL243A/Chapter%201-%20Introduction%20%28Preamble%20and%20RC%20Materials%29/Lec00%20-%20Introduction.pdf#page=1) | PDF | 1.7 MB | 2 | ✅ Parsed & Indexed |
+| [Lec01 - AnalysisVsDesign.pdf](open-preview:///Users/mohit/Documents/moodle-study-tool/output/Semester_2601/2601-CVL243A/Chapter%201-%20Introduction%20%28Preamble%20and%20RC%20Materials%29/Lec01%20-%20AnalysisVsDesign.pdf#page=1) | PDF | 1.9 MB | 3 | ✅ Parsed & Indexed |
+| [Lec02 - Concrete Components.pdf](open-preview:///Users/mohit/Documents/moodle-study-tool/output/Semester_2601/2601-CVL243A/Chapter%201-%20Introduction%20%28Preamble%20and%20RC%20Materials%29/Lec02%20-%20Concrete%20Components.pdf#page=1) | PDF | 3.0 MB | 3 | ✅ Parsed & Indexed |
+| [Lec03 - Fresh Properties of Concrete.pdf](open-preview:///Users/mohit/Documents/moodle-study-tool/output/Semester_2601/2601-CVL243A/Chapter%201-%20Introduction%20%28Preamble%20and%20RC%20Materials%29/Lec03%20-%20Fresh%20Properties%20of%20Concrete.pdf#page=1) | PDF | 6.9 MB | 4 | ✅ Parsed & Indexed |
+| [Lec04 - Hardened Properties of Concrete.pdf](open-preview:///Users/mohit/Documents/moodle-study-tool/output/Semester_2601/2601-CVL243A/Chapter%201-%20Introduction%20%28Preamble%20and%20RC%20Materials%29/Lec04%20-%20Hardened%20Properties%20of%20Concrete.pdf#page=1) | PDF | 5.2 MB | 5 | ✅ Parsed & Indexed |
+| [Lec05 - Reinforcement.pdf](open-preview:///Users/mohit/Documents/moodle-study-tool/output/Semester_2601/2601-CVL243A/Chapter%201-%20Introduction%20%28Preamble%20and%20RC%20Materials%29/Lec05%20-%20Reinforcement.pdf#page=1) | PDF | 1.3 MB | 2 | ✅ Parsed & Indexed |
+| [Lec06 - DesignPhilosophy.pdf](open-preview:///Users/mohit/Documents/moodle-study-tool/output/Semester_2601/2601-CVL243A/Chapter%202-%20Design%20Philosophies/Lec06%20-%20DesignPhilosophy.pdf#page=1) | PDF | 2.4 MB | 3 | ✅ Parsed & Indexed |
+| [Lec07 - LSMDesign.pdf](open-preview:///Users/mohit/Documents/moodle-study-tool/output/Semester_2601/2601-CVL243A/Chapter%202-%20Design%20Philosophies/Lec07%20-%20LSMDesign.pdf#page=1) | PDF | 1.9 MB | 3 | ✅ Parsed & Indexed |
+
+### 📖 2601-CVL245A
+| Document Name | Type | Size | Pages | Status |
+| :--- | :---: | :---: | :---: | :---: |
+| [1. Introduction-PROJECT LIFE CYCLE.pdf](open-preview:///Users/mohit/Documents/moodle-study-tool/output/Semester_2601/2601-CVL245A/1.%20Introduction-PROJECT%20LIFE%20CYCLE.pdf#page=1) | PDF | 2.3 MB | 35 | ✅ Parsed & Indexed |
+| [2. CONSTRUCTION PLANNING-WBS CPM.pdf](open-preview:///Users/mohit/Documents/moodle-study-tool/output/Semester_2601/2601-CVL245A/2.%20CONSTRUCTION%20PLANNING-WBS%20CPM.pdf#page=1) | PDF | 1.0 MB | 41 | ✅ Parsed & Indexed |
+| [3. CONSTRUCTION PLANNING-FLOATS.pdf](open-preview:///Users/mohit/Documents/moodle-study-tool/output/Semester_2601/2601-CVL245A/3.%20CONSTRUCTION%20PLANNING-FLOATS.pdf#page=1) | PDF | 189.1 KB | 23 | ✅ Parsed & Indexed |
+| [scope creep case study.pdf](open-preview:///Users/mohit/Documents/moodle-study-tool/output/Semester_2601/2601-CVL245A/scope%20creep%20case%20study.pdf#page=1) | PDF | 165.8 KB | 10 | ✅ Parsed & Indexed |
+
+### 📖 2601-CVL282A
+*No files downloaded for this course.*
+
+### 📖 2601-CVL341A
+| Document Name | Type | Size | Pages | Status |
+| :--- | :---: | :---: | :---: | :---: |
+| [Attendance view  URL.html](open-preview:///Users/mohit/Documents/moodle-study-tool/output/Semester_2601/2601-CVL341A/Attendance%20view%20%20URL.html#page=1) | HTML | 135 B | 1 | ✅ Parsed & Indexed |
+| [CVL341_Handout.pdf](open-preview:///Users/mohit/Documents/moodle-study-tool/output/Semester_2601/2601-CVL341A/CVL341_Handout.pdf#page=1) | PDF | 64.7 KB | 2 | ✅ Parsed & Indexed |
+| [https-rollcall.iitd.ac.in  URL.html](open-preview:///Users/mohit/Documents/moodle-study-tool/output/Semester_2601/2601-CVL341A/https-rollcall.iitd.ac.in%20%20URL.html#page=1) | HTML | 76 B | 1 | ✅ Parsed & Indexed |
+| [Lecture7.pdf](open-preview:///Users/mohit/Documents/moodle-study-tool/output/Semester_2601/2601-CVL341A/Module%202-%20Method%20of%20consistent%20deformation/Lecture7.pdf#page=1) | PDF | 4.6 MB | 43 | ✅ Parsed & Indexed |
+| [Virtual-Work-Integration-Table.pdf](open-preview:///Users/mohit/Documents/moodle-study-tool/output/Semester_2601/2601-CVL341A/Resources/Virtual-Work-Integration-Table.pdf#page=1) | PDF | 414.3 KB | 1 | ✅ Parsed & Indexed |
+| [BMD,SFD examples.pdf](open-preview:///Users/mohit/Documents/moodle-study-tool/output/Semester_2601/2601-CVL341A/Module1-%20Introduction%20and%20recap%20of%20determinate%20structures/BMD%2CSFD%20examples.pdf#page=1) | PDF | 4.6 MB | 14 | ✅ Parsed & Indexed |
+| [Lecture1.pdf](open-preview:///Users/mohit/Documents/moodle-study-tool/output/Semester_2601/2601-CVL341A/Module1-%20Introduction%20and%20recap%20of%20determinate%20structures/Lecture1.pdf#page=1) | PDF | 3.6 MB | 21 | ✅ Parsed & Indexed |
+| [Lecture2.pdf](open-preview:///Users/mohit/Documents/moodle-study-tool/output/Semester_2601/2601-CVL341A/Module1-%20Introduction%20and%20recap%20of%20determinate%20structures/Lecture2.pdf#page=1) | PDF | 3.3 MB | 23 | ✅ Parsed & Indexed |
+| [Lecture3.pdf](open-preview:///Users/mohit/Documents/moodle-study-tool/output/Semester_2601/2601-CVL341A/Module1-%20Introduction%20and%20recap%20of%20determinate%20structures/Lecture3.pdf#page=1) | PDF | 3.1 MB | 30 | ✅ Parsed & Indexed |
+| [Lecture4.pdf](open-preview:///Users/mohit/Documents/moodle-study-tool/output/Semester_2601/2601-CVL341A/Module1-%20Introduction%20and%20recap%20of%20determinate%20structures/Lecture4.pdf#page=1) | PDF | 5.3 MB | 27 | ✅ Parsed & Indexed |
+| [Lecture5.pdf](open-preview:///Users/mohit/Documents/moodle-study-tool/output/Semester_2601/2601-CVL341A/Module1-%20Introduction%20and%20recap%20of%20determinate%20structures/Lecture5.pdf#page=1) | PDF | 2.1 MB | 19 | ✅ Parsed & Indexed |
+| [Problem Set 1 solution.pdf](open-preview:///Users/mohit/Documents/moodle-study-tool/output/Semester_2601/2601-CVL341A/Module1-%20Introduction%20and%20recap%20of%20determinate%20structures/Problem%20Set%201%20solution.pdf#page=1) | PDF | 3.4 MB | 15 | ✅ Parsed & Indexed |
+
+### 📖 2601-CVP243A
+| Document Name | Type | Size | Pages | Status |
+| :--- | :---: | :---: | :---: | :---: |
+| [CVP243_Instructions.pdf](open-preview:///Users/mohit/Documents/moodle-study-tool/output/Semester_2601/2601-CVP243A/CVP243_Instructions.pdf#page=1) | PDF | 102.5 KB | 1 | ✅ Parsed & Indexed |
+| [CVP243_Schedule.pdf](open-preview:///Users/mohit/Documents/moodle-study-tool/output/Semester_2601/2601-CVP243A/CVP243_Schedule.pdf#page=1) | PDF | 274.2 KB | 2 | ✅ Parsed & Indexed |
+| [Introduction to CVP243.pdf](open-preview:///Users/mohit/Documents/moodle-study-tool/output/Semester_2601/2601-CVP243A/Introduction%20to%20CVP243.pdf#page=1) | PDF | 6.2 MB | 7 | ✅ Parsed & Indexed |
+
+### 📖 2601-HUL281A
+| Document Name | Type | Size | Pages | Status |
+| :--- | :---: | :---: | :---: | :---: |
+| [Collated Themes Final-2.pdf](open-preview:///Users/mohit/Documents/moodle-study-tool/output/Semester_2601/2601-HUL281A/Collated%20Themes%20Final-2.pdf#page=1) | PDF | 408.3 KB | 19 | ✅ Parsed & Indexed |
+| [Dusek_Technology.pdf](open-preview:///Users/mohit/Documents/moodle-study-tool/output/Semester_2601/2601-HUL281A/Dusek_Technology.pdf#page=1) | PDF | 57.7 KB | 6 | ✅ Parsed & Indexed |
+| [GroupsTasks.pdf](open-preview:///Users/mohit/Documents/moodle-study-tool/output/Semester_2601/2601-HUL281A/GroupsTasks.pdf#page=1) | PDF | 239.6 KB | 7 | ✅ Parsed & Indexed |
+| [HUL 281 course note.docx](open-preview:///Users/mohit/Documents/moodle-study-tool/output/Semester_2601/2601-HUL281A/HUL%20281%20course%20note.docx#page=1) | DOCX | 18.1 KB | 1 | ⏳ Pending Parse |
+| [Note on Tutorial Schedule  Group Work-2.pdf](open-preview:///Users/mohit/Documents/moodle-study-tool/output/Semester_2601/2601-HUL281A/Note%20on%20Tutorial%20Schedule%20%20Group%20Work-2.pdf#page=1) | PDF | 104.4 KB | 4 | ✅ Parsed & Indexed |
+| [Of Bicycles, Bakelites  Bulbs.pdf](open-preview:///Users/mohit/Documents/moodle-study-tool/output/Semester_2601/2601-HUL281A/Of%20Bicycles%2C%20Bakelites%20%20Bulbs.pdf#page=1) | PDF | 18.3 MB | 18 | ✅ Parsed & Indexed |
+| [Winner_1980.pdf](open-preview:///Users/mohit/Documents/moodle-study-tool/output/Semester_2601/2601-HUL281A/Winner_1980.pdf#page=1) | PDF | 2.2 MB | 17 | ✅ Parsed & Indexed |
+| [philip kitcher.pdf](open-preview:///Users/mohit/Documents/moodle-study-tool/output/Semester_2601/2601-HUL281A/philip%20kitcher.pdf#page=1) | PDF | 121.9 KB | 8 | ✅ Parsed & Indexed |
+| [regulation, insitutions and networks.pdf](open-preview:///Users/mohit/Documents/moodle-study-tool/output/Semester_2601/2601-HUL281A/regulation%2C%20insitutions%20and%20networks.pdf#page=1) | PDF | 333.8 KB | 23 | ✅ Parsed & Indexed |
+
+### 📖 2601-SBL100A
+| Document Name | Type | Size | Pages | Status |
+| :--- | :---: | :---: | :---: | :---: |
+| [Biomembranes.pdf](open-preview:///Users/mohit/Documents/moodle-study-tool/output/Semester_2601/2601-SBL100A/Biomembranes.pdf#page=1) | PDF | 6.0 MB | 51 | ✅ Parsed & Indexed |
+| [Carbohydrates.pptx](open-preview:///Users/mohit/Documents/moodle-study-tool/output/Semester_2601/2601-SBL100A/Carbohydrates.pptx#page=1) | PPTX | 5.5 MB | 1 | ⏳ Pending Parse |
+| [Evolution.pdf](open-preview:///Users/mohit/Documents/moodle-study-tool/output/Semester_2601/2601-SBL100A/Evolution.pdf#page=1) | PDF | 3.0 MB | 36 | ✅ Parsed & Indexed |
+| [Medelian inheritance.pdf](open-preview:///Users/mohit/Documents/moodle-study-tool/output/Semester_2601/2601-SBL100A/Medelian%20inheritance.pdf#page=1) | PDF | 971.5 KB | 22 | ✅ Parsed & Indexed |
+| [Nucleic acid basics.pdf](open-preview:///Users/mohit/Documents/moodle-study-tool/output/Semester_2601/2601-SBL100A/Nucleic%20acid%20basics.pdf#page=1) | PDF | 1.3 MB | 15 | ✅ Parsed & Indexed |
+| [Proteins 1.pdf](open-preview:///Users/mohit/Documents/moodle-study-tool/output/Semester_2601/2601-SBL100A/Proteins%201.pdf#page=1) | PDF | 3.1 MB | 30 | ✅ Parsed & Indexed |
+| [Proteins 2.pdf](open-preview:///Users/mohit/Documents/moodle-study-tool/output/Semester_2601/2601-SBL100A/Proteins%202.pdf#page=1) | PDF | 2.8 MB | 33 | ✅ Parsed & Indexed |
+| [Lecture 1 SMondal_24072026.pdf](open-preview:///Users/mohit/Documents/moodle-study-tool/output/Semester_2601/2601-SBL100A/SMondal%20Lectures/Lecture%201%20SMondal_24072026.pdf#page=1) | PDF | 2.7 MB | 17 | ✅ Parsed & Indexed |
+| [Lecture 13 SMondal_21082026.pdf](open-preview:///Users/mohit/Documents/moodle-study-tool/output/Semester_2601/2601-SBL100A/SMondal%20Lectures/Lecture%2013%20SMondal_21082026.pdf#page=1) | PDF | 2.7 MB | 18 | ✅ Parsed & Indexed |
+| [Lecture 14 SMondal_25082026.pdf](open-preview:///Users/mohit/Documents/moodle-study-tool/output/Semester_2601/2601-SBL100A/SMondal%20Lectures/Lecture%2014%20SMondal_25082026.pdf#page=1) | PDF | 2.1 MB | 15 | ✅ Parsed & Indexed |

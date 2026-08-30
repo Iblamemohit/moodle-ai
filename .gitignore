@@ -1,0 +1,32 @@
+# Credentials & local configuration
+.env
+scraper.conf
+
+# Python environments & caches
+.venv/
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.pytest_cache/
+
+# OS artifacts
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+Thumbs.db
+
+# Local scraped downloads, vector embeddings & parsed data
+output/
+data/chroma_db/
+data/parsed/
+data/slides/
+data/*.json
+data/*.csv
+data/*.md
+chroma_db/
+
+# Local workspace caches
+graphify-out/
