@@ -234,18 +234,26 @@ def step_setup_mcp_configs():
             pass
 
 def step_sync_skills():
-    print_step(5, "Syncing Skills for Antigravity & Agentic IDEs...")
-    src_skills = WORKSPACE_DIR / ".agents" / "skills"
+    print_step(5, "Syncing Skills for Antigravity, Claude Code & Agentic IDEs...")
+    agents_skills = WORKSPACE_DIR / ".agents" / "skills"
+    claude_skills = WORKSPACE_DIR / ".claude" / "skills"
     global_skills = Path.home() / ".gemini" / "config" / "skills"
 
-    if src_skills.exists() and global_skills.exists():
-        for skill_dir in src_skills.iterdir():
+    # Ensure .claude/skills mirrors .agents/skills
+    if agents_skills.exists():
+        claude_skills.mkdir(parents=True, exist_ok=True)
+        for skill_dir in agents_skills.iterdir():
+            if skill_dir.is_dir() and not skill_dir.name.startswith("."):
+                dest = claude_skills / skill_dir.name
+                shutil.copytree(skill_dir, dest, dirs_exist_ok=True)
+        print_success("Synchronized local skills in .agents/skills/ and .claude/skills/.")
+
+    if agents_skills.exists() and global_skills.exists():
+        for skill_dir in agents_skills.iterdir():
             if skill_dir.is_dir() and not skill_dir.name.startswith("."):
                 dest = global_skills / skill_dir.name
                 shutil.copytree(skill_dir, dest, dirs_exist_ok=True)
-        print_success("Synchronized all skills into Antigravity global skills directory.")
-    elif src_skills.exists():
-        print_success(f"Skills are available locally in {src_skills.relative_to(WORKSPACE_DIR)}.")
+        print_success("Synchronized skills into Antigravity global skills directory.")
 
 def main():
     print_header("moodle-study-agent Universal Setup & Installer")
