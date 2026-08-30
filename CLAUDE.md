@@ -19,4 +19,5 @@
 - `/install`: Universal 1-click installer.
 
 ## Citations
-Format citations as `[Course / File.pdf (Page X)](open-preview:///absolute/path/to/output/.../File.pdf#page=X)`.
+Format citations using dual links: `[Course / File.pdf (Page X)](file:///absolute/path/to/file.pdf) ([Open in Preview](open-preview:///absolute/path/to/file.pdf#page=X))`.
+

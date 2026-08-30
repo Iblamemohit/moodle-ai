@@ -333,7 +333,12 @@ def moodle_ask(query: str, doc_filter: Optional[str] = None, course_filter: Opti
             preview_url = f"open-preview://{quoted_path}#page={page_num}"
 
         citation_label = f"{meta.get('course')} / {meta.get('filename')} (Page {page_num})"
-        citation = f"[{citation_label}]({preview_url})" if preview_url else (f"[{citation_label}]({pdf_url}#page={page_num})" if pdf_url else f"[{citation_label}]")
+        if pdf_url and preview_url:
+            citation = f"[{citation_label}]({pdf_url}) ([Open in Preview]({preview_url}))"
+        elif pdf_url:
+            citation = f"[{citation_label}]({pdf_url}#page={page_num})"
+        else:
+            citation = f"[{citation_label}]"
 
         retrieved_chunks.append({
             "source_type": "moodle_course_material",
@@ -346,6 +351,7 @@ def moodle_ask(query: str, doc_filter: Optional[str] = None, course_filter: Opti
             "bm25_score": r.get("bm25_score", 0.0),
             "text": r["text"],
             "pdf_path": str(src_path.resolve()) if src_path.exists() else None,
+            "pdf_url": pdf_url,
             "preview_url": preview_url,
             "citation": citation
         })
@@ -403,7 +409,12 @@ def moodle_quiz(course: Optional[str] = None, num_questions: int = 5) -> Dict[st
             preview_url = f"open-preview://{quoted_path}#page={page_num}"
 
         citation_label = f"{meta.get('course')} / {meta.get('filename')} (Page {page_num})"
-        citation = f"[{citation_label}]({preview_url})" if preview_url else (f"[{citation_label}]({pdf_url}#page={page_num})" if pdf_url else f"[{citation_label}]")
+        if pdf_url and preview_url:
+            citation = f"[{citation_label}]({pdf_url}) ([Open in Preview]({preview_url}))"
+        elif pdf_url:
+            citation = f"[{citation_label}]({pdf_url}#page={page_num})"
+        else:
+            citation = f"[{citation_label}]"
 
         sampled_materials.append({
             "course": meta.get("course"),
@@ -411,9 +422,11 @@ def moodle_quiz(course: Optional[str] = None, num_questions: int = 5) -> Dict[st
             "page": page_num,
             "text": r["text"],
             "pdf_path": str(src_path.resolve()) if src_path.exists() else None,
+            "pdf_url": pdf_url,
             "preview_url": preview_url,
             "citation": citation
         })
+
 
     return {
         "status": "success",

@@ -125,7 +125,9 @@ class ListManager:
                     full_src_path = (self.output_dir / f["rel_path"]).resolve()
                     if full_src_path.exists():
                         quoted_path = urllib.parse.quote(str(full_src_path), safe="/:")
-                        doc_display = f"[{f['name']}](open-preview://{quoted_path}#page=1)"
+                        file_url = f"file://{full_src_path}"
+                        preview_url = f"open-preview://{quoted_path}#page=1"
+                        doc_display = f"[{f['name']}]({file_url}) ([Preview]({preview_url}))"
                     else:
                         doc_display = f"`{f['name']}`"
                     lines.append(f"| {doc_display} | {f['ext']} | {f['size']} | {f['pages']} | {status} |")
