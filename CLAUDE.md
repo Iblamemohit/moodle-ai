@@ -1,11 +1,12 @@
-# CLAUDE.md — Moodle Study Agent Instructions
+# CLAUDE.md — Moodle AI Instructions
 
 ## Quick Start
 - Run universal setup: `python install.py` (or `./install.sh`)
-- Run CLI tools: `.venv/bin/python agent_tools.py <command>`
+- Master command: `.venv/bin/python agent_tools.py /moodle-ai`
 - Run MCP server: `.venv/bin/python mcp_server.py`
 
 ## Commands
+- `/moodle-ai`: Master status and interactive command router.
 - `/setup`: Setup `.env` Kerberos credentials safely without asking passwords in chat.
 - `/sync [semester]`: Sync Moodle courses and custom URLs into local ChromaDB + BM25 index.
 - `/add-custom-url <url> [label]`: Register and auto-index external web URLs or direct PDFs.
@@ -15,6 +16,7 @@
 - `/ask <question>`: Hybrid search course knowledge base with slide citations.
 - `/quiz [course]`: Generate practice quiz context.
 - `/open <file_or_query> [page]`: Launch PDF in macOS Preview.
+- `/install`: Universal 1-click installer.
 
 ## Citations
 Format citations as `[Course / File.pdf (Page X)](open-preview:///absolute/path/to/output/.../File.pdf#page=X)`.

@@ -16,7 +16,7 @@ from agent_tools import (
 from src.scraper_sync import discover_available_semesters
 
 # Initialize MCP Server (MCP 2.x standard)
-mcp = MCPServer("moodle-study-agent")
+mcp = MCPServer("moodle-ai")
 
 @mcp.tool()
 def moodle_search_and_ask(query: str, doc_filter: Optional[str] = None, course_filter: Optional[str] = None) -> str:

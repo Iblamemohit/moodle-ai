@@ -1,4 +1,4 @@
-# 🎓 moodle-study-agent Agent Guidelines
+# 🎓 moodle-ai Agent Guidelines
 
 This repository contains an academic study assistant, streaming Moodle scraper, custom URL scraper, and Hybrid RAG retrieval engine.
 
@@ -12,13 +12,14 @@ This repository contains an academic study assistant, streaming Moodle scraper, 
 3. **Hybrid RAG Engine (`src/indexer.py`)**:
    - Dense retrieval (ChromaDB `all-MiniLM-L6-v2`) + Lexical retrieval (BM25) with Reciprocal Rank Fusion (RRF).
 4. **Tools & CLI (`agent_tools.py`)**:
-   - Entry point for `/setup`, `/sync`, `/list`, `/ask`, `/quiz`, `/open`, `/add-custom-url`, `/remove-custom-url`, `/list-custom-urls`, `/install`.
+   - Entry point for `/moodle-ai`, `/setup`, `/sync`, `/list`, `/ask`, `/quiz`, `/open`, `/add-custom-url`, `/remove-custom-url`, `/list-custom-urls`, `/install`.
 5. **Model Context Protocol Server (`mcp_server.py`)**:
-   - MCP 2.x standard server exposing tools to Claude Desktop, Cursor, Antigravity, and Codex.
+   - MCP 2.x standard server exposing tools (`moodle-ai`) to Claude Desktop, Cursor, Antigravity, and Codex.
 
 ## ⚡ Key Commands & CLI Dispatcher
 
 All commands are executed via `.venv/bin/python agent_tools.py`:
+- `python agent_tools.py /moodle-ai`: Master status & help dispatcher.
 - `python agent_tools.py /setup`: Initialize or verify `.env` credentials.
 - `python agent_tools.py /sync [semester_code]`: Stream download, markdown conversion, and vector indexing.
 - `python agent_tools.py /add-custom-url "<URL>" [label]`: Scrape and index external course website or direct PDF.

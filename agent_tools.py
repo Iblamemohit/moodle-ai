@@ -480,7 +480,34 @@ if __name__ == "__main__":
 
     cmd = sys.argv[1].lower()
 
-    if cmd in ("/setup", "setup"):
+    if cmd in ("/moodle-ai", "moodle-ai"):
+        if len(sys.argv) > 2:
+            sub = sys.argv[2].lower()
+            # Rewrite argv and recurse / dispatch
+            sys.argv = [sys.argv[0]] + sys.argv[2:]
+            cmd = sys.argv[1].lower()
+        else:
+            print(json.dumps({
+                "status": "success",
+                "name": "moodle-ai",
+                "version": "1.0.0-alpha",
+                "description": "Academic Study Assistant & Moodle Streaming RAG Engine",
+                "available_commands": [
+                    "/setup",
+                    "/sync [semester]",
+                    "/add-custom-url <URL> [label]",
+                    "/remove-custom-url <URL_OR_LABEL>",
+                    "/list-custom-urls",
+                    "/list",
+                    "/ask <query>",
+                    "/quiz [course]",
+                    "/open <path_or_query> [page]",
+                    "/install"
+                ]
+            }, indent=2))
+            sys.exit(0)
+
+    if cmd in ("/setup", "setup", "/moodle-ai-setup", "moodle-ai-setup", "/moodle-setup", "moodle-setup"):
         user = sys.argv[2] if len(sys.argv) >= 4 else None
         pwd = sys.argv[3] if len(sys.argv) >= 4 else None
         baseurls = sys.argv[4] if len(sys.argv) > 4 else None
@@ -488,17 +515,17 @@ if __name__ == "__main__":
         res = setup_moodle(user, pwd, baseurls=baseurls, output_dir=out_dir)
         print(json.dumps(res, indent=2))
 
-    elif cmd in ("/change-sync", "change-sync", "/tracked-semester", "tracked-semester"):
+    elif cmd in ("/change-sync", "change-sync", "/moodle-ai-change-sync", "moodle-ai-change-sync", "/tracked-semester", "tracked-semester"):
         sem_arg = sys.argv[2] if len(sys.argv) > 2 and not sys.argv[2].startswith("--") else None
         res = moodle_change_sync(target_semester=sem_arg)
         print(json.dumps(res, indent=2))
 
-    elif cmd in ("/sync", "sync"):
+    elif cmd in ("/sync", "sync", "/moodle-ai-sync", "moodle-ai-sync", "/moodle-sync", "moodle-sync"):
         sem = sys.argv[2] if len(sys.argv) > 2 and not sys.argv[2].startswith("--") else None
         res = sync_moodle(semester=sem)
         print(json.dumps(res, indent=2))
 
-    elif cmd in ("/add-custom-url", "add-custom-url", "/moodle-add-custom-url", "moodle-add-custom-url", "/add-url", "add-url"):
+    elif cmd in ("/add-custom-url", "add-custom-url", "/moodle-ai-add-custom-url", "moodle-ai-add-custom-url", "/moodle-add-custom-url", "moodle-add-custom-url", "/add-url", "add-url"):
         if len(sys.argv) < 3:
             print(json.dumps({
                 "status": "error",
@@ -511,7 +538,7 @@ if __name__ == "__main__":
         res = moodle_add_custom_url(url_arg, label=label_arg, auto_sync=not no_sync)
         print(json.dumps(res, indent=2))
 
-    elif cmd in ("/remove-custom-url", "remove-custom-url", "/moodle-remove-custom-url", "moodle-remove-custom-url", "/remove-url", "remove-url"):
+    elif cmd in ("/remove-custom-url", "remove-custom-url", "/moodle-ai-remove-custom-url", "moodle-ai-remove-custom-url", "/moodle-remove-custom-url", "moodle-remove-custom-url", "/remove-url", "remove-url"):
         if len(sys.argv) < 3:
             print(json.dumps({
                 "status": "error",
@@ -523,11 +550,11 @@ if __name__ == "__main__":
         res = moodle_remove_custom_url(target_arg, delete_files=del_files)
         print(json.dumps(res, indent=2))
 
-    elif cmd in ("/list-custom-urls", "list-custom-urls", "/moodle-list-custom-urls", "moodle-list-custom-urls", "/custom-urls", "custom-urls"):
+    elif cmd in ("/list-custom-urls", "list-custom-urls", "/moodle-ai-list-custom-urls", "moodle-ai-list-custom-urls", "/moodle-list-custom-urls", "moodle-list-custom-urls", "/custom-urls", "custom-urls"):
         res = moodle_list_custom_urls()
         print(json.dumps(res, indent=2))
 
-    elif cmd in ("/list", "list"):
+    elif cmd in ("/list", "list", "/moodle-ai-list", "moodle-ai-list", "/moodle-list", "moodle-list"):
         regen = "--regen" in sys.argv or "--force" in sys.argv
         res = moodle_list(regenerate=regen)
         if "--json" in sys.argv:
@@ -535,7 +562,7 @@ if __name__ == "__main__":
         else:
             print(res["markdown_content"])
 
-    elif cmd in ("/ask", "ask"):
+    elif cmd in ("/ask", "ask", "/moodle-ai-ask", "moodle-ai-ask", "/moodle-ask", "moodle-ask"):
         raw_args = [a for a in sys.argv[2:] if not a.startswith("--")]
         if not raw_args:
             print(json.dumps({
@@ -561,7 +588,7 @@ if __name__ == "__main__":
                     print(f"\n{item['citation']}:")
                     print(item['summary'][:350] + "...")
 
-    elif cmd in ("/quiz", "quiz"):
+    elif cmd in ("/quiz", "quiz", "/moodle-ai-quiz", "moodle-ai-quiz", "/moodle-quiz", "moodle-quiz"):
         course_name = sys.argv[2] if len(sys.argv) > 2 and not sys.argv[2].startswith("--") else None
         res = moodle_quiz(course_name)
         print(json.dumps(res, indent=2))
@@ -594,5 +621,6 @@ if __name__ == "__main__":
     else:
         print(json.dumps({
             "status": "error",
-            "message": f"Unknown command '{cmd}'. Available commands: /setup, /sync, /list, /ask, /quiz, /open, /change-sync, /add-custom-url, /remove-custom-url, /list-custom-urls, /install"
+            "message": f"Unknown command '{cmd}'. Available commands: /moodle-ai, /setup, /sync, /list, /ask, /quiz, /open, /change-sync, /add-custom-url, /remove-custom-url, /list-custom-urls, /install"
         }, indent=2))
+

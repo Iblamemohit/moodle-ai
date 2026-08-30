@@ -1,4 +1,4 @@
-# 🎓 moodle-study-agent
+# 🎓 moodle-ai
 
 A privacy-first, offline-capable AI Study Agent, Streaming Moodle Scraper, Custom URL Scraper, and Knowledge Retrieval Engine for university course materials.
 
@@ -27,8 +27,8 @@ python3 agent_tools.py /install
 
 | Environment | Setup Method | What Works |
 | :--- | :--- | :--- |
-| **Antigravity IDE** | Open folder or run `/moodle-study-agent` | Auto-detects `.agents/skills/` & MCP tools |
-| **Claude Desktop** | Pre-configured by `install.py` | Full MCP tools (`moodle_search_and_ask`, etc.) |
+| **Antigravity IDE** | Open folder or run `/moodle-ai` | Auto-detects `.agents/skills/` & MCP tools |
+| **Claude Desktop** | Pre-configured by `install.py` | Full MCP tools (`moodle-ai`) |
 | **Cursor** | Open project folder (`.cursor/mcp.json`) | Native MCP server ready on project open |
 | **VS Code / Codex** | Open project folder (`.vscode/mcp.json`) | Native MCP server ready on project open |
 | **Windsurf** | Pre-configured by `install.py` | Global MCP server registration |
@@ -38,13 +38,18 @@ python3 agent_tools.py /install
 
 ## 🛠️ Workflows & Commands
 
-### 1. Initial Setup
+### 1. Master Command
+```bash
+python agent_tools.py /moodle-ai
+```
+
+### 2. Initial Setup
 Enter your IIT Delhi Kerberos ID and password securely into the generated `.env` file (passwords are never typed in LLM chat prompts):
 ```bash
 python agent_tools.py /setup
 ```
 
-### 2. Syncing Course Materials & Custom URLs
+### 3. Syncing Course Materials & Custom URLs
 ```bash
 # Sync active semester + all registered custom URLs
 python agent_tools.py /sync
@@ -56,19 +61,19 @@ python agent_tools.py /sync 2601
 python agent_tools.py /sync custom
 ```
 
-### 3. Adding External Custom Webpages & PDFs
+### 4. Adding External Custom Webpages & PDFs
 Add arbitrary external URLs (course homepages, professor notes, syllabus links, public PDFs):
 ```bash
 python agent_tools.py /add-custom-url "https://example.com/notes.pdf" "Extra_Notes"
 ```
 
-### 4. Asking Questions with Direct PDF Preview Citations
+### 5. Asking Questions with Direct PDF Preview Citations
 ```bash
 python agent_tools.py /ask "What is total float in CPM?"
 ```
 Every citation is formatted as `[Course / File.pdf (Page X)](open-preview://...)`, which opens the exact slide in macOS Preview when clicked.
 
-### 5. Managing Custom URLs
+### 6. Managing Custom URLs
 ```bash
 # List all registered external sources
 python agent_tools.py /list-custom-urls
@@ -77,7 +82,7 @@ python agent_tools.py /list-custom-urls
 python agent_tools.py /remove-custom-url "Extra_Notes" --delete-files
 ```
 
-### 6. Practice Exams & Quizzes
+### 7. Practice Exams & Quizzes
 ```bash
 python agent_tools.py /quiz "2601-CVL245A"
 ```
@@ -87,7 +92,7 @@ python agent_tools.py /quiz "2601-CVL245A"
 ## 📂 Project Architecture
 
 ```text
-moodle-study-agent/
+moodle-ai/
 ├── install.py                 # Universal 1-click installer & auto-configurator
 ├── install.sh                 # Executable setup shell script
 ├── AGENTS.md                  # Universal agent directives & architecture
@@ -95,7 +100,7 @@ moodle-study-agent/
 ├── .cursor/mcp.json           # Native Cursor MCP config
 ├── .vscode/mcp.json           # Native VS Code & Codex MCP config
 ├── .agents/skills/            # 9 modular Antigravity custom skills
-│   ├── moodle-study-agent/    # Master AI tutor skill
+│   ├── moodle-ai/             # Master AI tutor skill
 │   ├── moodle-sync/           # Streaming sync skill
 │   ├── moodle-add-custom-url/ # Custom URL scraper skill
 │   ├── moodle-remove-custom-url/
@@ -104,8 +109,9 @@ moodle-study-agent/
 │   ├── moodle-list/           # Document catalog skill
 │   ├── moodle-change-sync/    # Semester switch skill
 │   └── moodle-setup/          # Secure credential setup skill
+├── .claude/skills/            # Claude Code native skills
 ├── agent_tools.py             # CLI dispatcher & high-level RAG / Preview tools
-├── mcp_server.py              # Official MCP standard server (for Claude/Cursor)
+├── mcp_server.py              # Official MCP standard server (moodle-ai)
 └── src/
     ├── config.py              # Environment configuration loader
     ├── custom_scraper.py      # Custom URL scraper & source manager

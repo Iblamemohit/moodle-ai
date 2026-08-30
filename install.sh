@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-# Universal 1-Click Installer for moodle-study-agent / moodle-ai
+# Universal 1-Click Installer for moodle-ai
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
-echo "🎓 Launching moodle-study-agent Universal Setup..."
+echo "🎓 Launching moodle-ai Universal Setup..."
 
 # Detect available python3 binary
 if command -v python3 &>/dev/null; then

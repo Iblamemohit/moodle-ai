@@ -186,7 +186,7 @@ def step_setup_mcp_configs():
 
     for c_path in claude_paths:
         try:
-            update_json_mcp_config(c_path, "moodle-study-agent", venv_py, mcp_script)
+            update_json_mcp_config(c_path, "moodle-ai", venv_py, mcp_script)
             print_success(f"Configured Claude Desktop: {c_path}")
         except Exception as e:
             print_warn(f"Could not update Claude Desktop config at {c_path}: {e}")
@@ -196,13 +196,13 @@ def step_setup_mcp_configs():
     vscode_workspace = WORKSPACE_DIR / ".vscode" / "mcp.json"
 
     try:
-        update_json_mcp_config(cursor_workspace, "moodle-study-agent", venv_py, mcp_script)
+        update_json_mcp_config(cursor_workspace, "moodle-ai", venv_py, mcp_script)
         print_success(f"Configured Cursor Workspace: {cursor_workspace.relative_to(WORKSPACE_DIR)}")
     except Exception as e:
         print_warn(f"Cursor workspace config error: {e}")
 
     try:
-        update_json_mcp_config(vscode_workspace, "moodle-study-agent", venv_py, mcp_script)
+        update_json_mcp_config(vscode_workspace, "moodle-ai", venv_py, mcp_script)
         print_success(f"Configured VS Code / Codex Workspace: {vscode_workspace.relative_to(WORKSPACE_DIR)}")
     except Exception as e:
         print_warn(f"VS Code workspace config error: {e}")
@@ -210,7 +210,7 @@ def step_setup_mcp_configs():
     # 3. Global Cursor
     cursor_global = Path.home() / ".cursor" / "mcp.json"
     try:
-        update_json_mcp_config(cursor_global, "moodle-study-agent", venv_py, mcp_script)
+        update_json_mcp_config(cursor_global, "moodle-ai", venv_py, mcp_script)
         print_success(f"Configured Cursor Global: {cursor_global}")
     except Exception as e:
         pass
@@ -219,7 +219,7 @@ def step_setup_mcp_configs():
     gemini_mcp = Path.home() / ".gemini" / "config" / "mcp_config.json"
     if gemini_mcp.parent.exists():
         try:
-            update_json_mcp_config(gemini_mcp, "moodle-study-agent", venv_py, mcp_script)
+            update_json_mcp_config(gemini_mcp, "moodle-ai", venv_py, mcp_script)
             print_success(f"Configured Antigravity Global: {gemini_mcp}")
         except Exception as e:
             pass
@@ -228,7 +228,7 @@ def step_setup_mcp_configs():
     windsurf_mcp = Path.home() / ".codeium" / "windsurf" / "mcp_config.json"
     if windsurf_mcp.parent.exists():
         try:
-            update_json_mcp_config(windsurf_mcp, "moodle-study-agent", venv_py, mcp_script)
+            update_json_mcp_config(windsurf_mcp, "moodle-ai", venv_py, mcp_script)
             print_success(f"Configured Windsurf Global: {windsurf_mcp}")
         except Exception as e:
             pass
@@ -256,7 +256,7 @@ def step_sync_skills():
         print_success("Synchronized skills into Antigravity global skills directory.")
 
 def main():
-    print_header("moodle-study-agent Universal Setup & Installer")
+    print_header("moodle-ai Universal Setup & Installer")
     print(f"📁 Workspace: {WORKSPACE_DIR}")
     print(f"💻 System:    {platform.system()} ({platform.machine()})\n")
 
@@ -267,12 +267,13 @@ def main():
     step_sync_skills()
 
     print_header("Installation & Configuration Complete! 🎉")
-    print("You are ready to use moodle-study-agent in any environment:\n")
-    print(f"  • {Colors.BOLD}Antigravity IDE / Gemini{Colors.ENDC}: Type `/moodle-study-agent` in chat.")
-    print(f"  • {Colors.BOLD}Claude Desktop{Colors.ENDC}: Open Claude (MCP server is pre-configured).")
+    print("You are ready to use moodle-ai in any environment:\n")
+    print(f"  • {Colors.BOLD}Antigravity IDE / Gemini{Colors.ENDC}: Type `/moodle-ai` in chat.")
+    print(f"  • {Colors.BOLD}Claude Desktop{Colors.ENDC}: Open Claude (MCP server 'moodle-ai' is pre-configured).")
     print(f"  • {Colors.BOLD}Cursor / Windsurf / Codex{Colors.ENDC}: Open this folder (MCP is auto-configured).")
     print(f"  • {Colors.BOLD}Terminal / CLI{Colors.ENDC}: Run `.venv/bin/python agent_tools.py /sync`")
     print("\nNext step: Open `.env` to verify your Kerberos ID & password, then run `/sync`!\n")
 
 if __name__ == "__main__":
     main()
+
