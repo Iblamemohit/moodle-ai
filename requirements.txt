@@ -7,3 +7,5 @@ langchain-text-splitters>=0.0.1
 rank_bm25>=0.2.2
 wikipedia>=1.4.0
 mcp>=1.0.0
+
+python-pptx>=0.6.21

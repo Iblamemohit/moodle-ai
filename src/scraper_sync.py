@@ -148,7 +148,7 @@ def sync_moodle_courses(semester_filter: Optional[str] = None, course_index: Opt
             processed_files.add(file_path_str)
 
         ext = p.suffix.lower()
-        if ext in (".pdf", ".txt", ".md", ".html", ".htm"):
+        if ext in (".pdf", ".txt", ".md", ".html", ".htm", ".pptx", ".ppt", ".docx", ".zip"):
             try:
                 # 1. Immediately Parse to Markdown
                 chunks = parser.parse_file(p, force=is_new)

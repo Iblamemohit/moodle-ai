@@ -18,7 +18,7 @@ def get_config():
     output_dir = os.getenv("OUTPUT_DIR", "output")
     parsed_dir = os.getenv("PARSED_DIR", "data/parsed")
     chroma_dir = os.getenv("CHROMA_DIR", "data/chroma_db")
-    tracked_semester = os.getenv("TRACKED_SEMESTER", "2601")
+    tracked_semester = os.getenv("TRACKED_SEMESTER", "")
 
     urls_list = [u.strip() for u in baseurls.split(",") if u.strip()]
 
@@ -43,7 +43,7 @@ def init_env_template():
             "KERBEROS_PASSWORD=your_kerberos_password_here\n\n"
             "# Moodle Configuration\n"
             "MOODLE_BASEURLS=https://moodle.iitd.ac.in/, https://moodlenew.iitd.ac.in/\n"
-            "TRACKED_SEMESTER=2601\n"
+            "TRACKED_SEMESTER=\n"
             "OUTPUT_DIR=output\n"
             "PARSED_DIR=data/parsed\n"
             "CHROMA_DIR=data/chroma_db\n"
@@ -68,7 +68,7 @@ def save_env_config(user, password, baseurls=None, output_dir=None, tracked_seme
     if tracked_semester:
         lines.append(f"TRACKED_SEMESTER={tracked_semester}")
     else:
-        curr_sem = os.getenv("TRACKED_SEMESTER", "2601")
+        curr_sem = os.getenv("TRACKED_SEMESTER", "")
         lines.append(f"TRACKED_SEMESTER={curr_sem}")
 
     if output_dir:

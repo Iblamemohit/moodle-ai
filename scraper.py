@@ -262,6 +262,43 @@ def getAllCoursesAndSemesters(sessions_by_url):
     return all_courses, semesters
 
 
+import zipfile
+import shutil
+
+def extract_zip(zip_path, extract_dir, on_file_saved=None):
+    """Safely extracts a ZIP archive and triggers on_file_saved on all contents."""
+    os.makedirs(extract_dir, exist_ok=True)
+    extracted_files = []
+    try:
+        with zipfile.ZipFile(zip_path, 'r') as zf:
+            for member in zf.infolist():
+                member_path = os.path.abspath(os.path.join(extract_dir, member.filename))
+                if not member_path.startswith(os.path.abspath(extract_dir)):
+                    continue
+                if member.is_dir():
+                    os.makedirs(member_path, exist_ok=True)
+                    continue
+                os.makedirs(os.path.dirname(member_path), exist_ok=True)
+                with zf.open(member) as source, open(member_path, 'wb') as target:
+                    shutil.copyfileobj(source, target)
+                extracted_files.append(member_path)
+                print('[' + colors.OKGREEN + 'unzip' + colors.ENDC + '] |  |  +--%s' % os.path.relpath(member_path, extract_dir))
+                
+                # If extracted file is itself a zip, recursively extract it
+                if member_path.lower().endswith('.zip'):
+                    nested_dir = os.path.splitext(member_path)[0]
+                    nested_files = extract_zip(member_path, nested_dir, on_file_saved=on_file_saved)
+                    extracted_files.extend(nested_files)
+                elif on_file_saved:
+                    try:
+                        on_file_saved(member_path, is_new=True)
+                    except Exception as ex:
+                        print(f"Error in on_file_saved for {member_path}: {ex}")
+    except Exception as e:
+        print('[' + colors.FAIL + 'unzip-error' + colors.ENDC + '] |  |  +--%s (%s)' % (os.path.basename(zip_path), e))
+    return extracted_files
+
+
 def saveFile(session_obj, src, path, name, on_file_saved=None):
     global files
     next(files)
@@ -275,13 +312,18 @@ def saveFile(session_obj, src, path, name, on_file_saved=None):
                 on_file_saved(dst, is_new=False)
             except Exception:
                 pass
+        if dst.lower().endswith('.zip'):
+            extract_dir = os.path.splitext(dst)[0]
+            if not os.path.exists(extract_dir) or not os.listdir(extract_dir):
+                extract_zip(dst, extract_dir, on_file_saved=on_file_saved)
         return
 
     try:
+        os.makedirs(os.path.dirname(dst), exist_ok=True)
         with open(dst, 'wb') as handle:
             print('[' + colors.OKGREEN + 'save' + colors.ENDC + '] |  |  +--%s' % name)
             r = session_obj.get(src, stream=True, allow_redirects=True)
-            for block in r.iter_content(1024):
+            for block in r.iter_content(65536):
                 if not block:
                     break
                 handle.write(block)
@@ -290,6 +332,9 @@ def saveFile(session_obj, src, path, name, on_file_saved=None):
                 on_file_saved(dst, is_new=True)
             except Exception:
                 pass
+        if dst.lower().endswith('.zip'):
+            extract_dir = os.path.splitext(dst)[0]
+            extract_zip(dst, extract_dir, on_file_saved=on_file_saved)
     except Exception as e:
         print('[' + colors.FAIL + 'fail' + colors.ENDC + '] |  |  +--%s (%s)' % (name, e))
 
@@ -297,39 +342,115 @@ def saveFile(session_obj, src, path, name, on_file_saved=None):
 def saveLink(session_obj, url, path, name, on_file_saved=None):
     global files
     next(files)
-    fname = name.replace('/', '') + '.html'
-    dst = os.path.join(path, fname) if not path.endswith('/') else path + fname
-    dst = dst.replace(':', '-').replace('"', '')
-
-    if os.path.exists(dst):
-        print('[' + colors.OKBLUE + 'skip' + colors.ENDC + '] |  |  +--%s' % name)
-        if on_file_saved:
-            try:
-                on_file_saved(dst, is_new=False)
-            except Exception:
-                pass
-        return
-
     try:
-        with open(dst, 'w', encoding='utf-8') as handle:
-            print('[' + colors.OKGREEN + 'save' + colors.ENDC + '] |  |  +--%s' % name)
-            r = session_obj.get(url)
-            soup = BeautifulSoup(r.text, 'html.parser')
-            region = soup.find(class_='region-content') or soup.find(class_='urlworkaround')
-            if region and region.find('a'):
-                link = region.find('a').get('href', url)
-                handle.write(f'<a href="{link}">{name}</a>')
-            else:
-                handle.write(f'<a href="{url}">{name}</a>')
-        if on_file_saved:
-            try:
-                on_file_saved(dst, is_new=True)
-            except Exception:
-                pass
+        # 1. Fetch Moodle URL wrapper page to resolve destination
+        r = session_obj.get(url, allow_redirects=True)
+        target_url = url
+        soup = BeautifulSoup(r.text, 'html.parser')
+        region = soup.find(class_='region-content') or soup.find(class_='urlworkaround')
+        if region and region.find('a'):
+            target_url = region.find('a').get('href', url)
+        elif r.url and r.url != url:
+            target_url = r.url
+
+        # 2. Transform Google Drive / Docs / Cloud storage links to direct download endpoints
+        if 'drive.google.com/file/d/' in target_url:
+            m = re.search(r'drive\.google\.com/file/d/([a-zA-Z0-9_-]+)', target_url)
+            if m:
+                target_url = f"https://drive.google.com/uc?export=download&id={m.group(1)}"
+        elif 'drive.google.com/open?id=' in target_url:
+            m = re.search(r'id=([a-zA-Z0-9_-]+)', target_url)
+            if m:
+                target_url = f"https://drive.google.com/uc?export=download&id={m.group(1)}"
+        elif 'docs.google.com/presentation/d/' in target_url:
+            m = re.search(r'docs\.google\.com/presentation/d/([a-zA-Z0-9_-]+)', target_url)
+            if m:
+                target_url = f"https://docs.google.com/presentation/d/{m.group(1)}/export/pptx"
+        elif 'docs.google.com/document/d/' in target_url:
+            m = re.search(r'docs\.google\.com/document/d/([a-zA-Z0-9_-]+)', target_url)
+            if m:
+                target_url = f"https://docs.google.com/document/d/{m.group(1)}/export?format=pdf"
+        elif 'dropbox.com' in target_url and 'dl=0' in target_url:
+            target_url = target_url.replace('dl=0', 'dl=1')
+
+        # 3. Probe target URL
+        res = session_obj.get(target_url, stream=True, allow_redirects=True)
+        headers = {k.lower(): v for k, v in res.headers.items()}
+        content_type = headers.get('content-type', '').lower()
+        
+        # Check Content-Disposition for filename
+        cd = headers.get('content-disposition', '')
+        dl_name = None
+        m_cd = re.search(r"filename\*?=(?:UTF-8'')?["']?([^"';\r\n]+)", cd, re.IGNORECASE)
+]+)', cd, re.IGNORECASE)
+        if m_cd:
+            dl_name = m_cd.group(1).strip('"' ')
+
+        parsed_target = urllib.parse.urlparse(res.url)
+        path_base = os.path.basename(parsed_target.path)
+        
+        doc_extensions = ('.pdf', '.pptx', '.ppt', '.docx', '.doc', '.zip', '.txt', '.md', '.html', '.htm', '.csv', '.xlsx', '.py', '.c', '.cpp')
+        is_direct_doc = (
+            dl_name is not None or
+            any(parsed_target.path.lower().endswith(ext) for ext in doc_extensions) or
+            'application/pdf' in content_type or
+            'application/vnd.openxmlformats' in content_type or
+            'application/vnd.ms-powerpoint' in content_type or
+            'application/zip' in content_type or
+            'application/x-zip' in content_type
+        )
+
+        if is_direct_doc:
+            if not dl_name:
+                if path_base and '.' in path_base:
+                    dl_name = path_base
+                else:
+                    ext = '.pdf'
+                    if 'presentation' in content_type or 'powerpoint' in content_type:
+                        ext = '.pptx'
+                    elif 'zip' in content_type:
+                        ext = '.zip'
+                    elif 'word' in content_type:
+                        ext = '.docx'
+                    dl_name = f"{name}{ext}"
+            dl_name = urllib.request.url2pathname(dl_name).replace(':', '-').replace('"', '')
+            saveFile(session_obj, res.url, path, dl_name, on_file_saved=on_file_saved)
+            return
+
+        # 4. If it is an HTML webpage, check for embedded lecture notes / file downloads
+        page_soup = BeautifulSoup(res.text, 'html.parser')
+        embedded_docs = []
+        for a_tag in page_soup.find_all('a', href=True):
+            href = a_tag['href'].strip()
+            abs_href = urllib.parse.urljoin(res.url, href)
+            p_h = urllib.parse.urlparse(abs_href).path.lower()
+            if any(p_h.endswith(ext) for ext in ('.pdf', '.pptx', '.ppt', '.zip', '.docx')):
+                embedded_docs.append((abs_href, a_tag.get_text().strip()))
+
+        if embedded_docs:
+            print('[' + colors.OKGREEN + 'link-page' + colors.ENDC + f'] |  |  +--Found {len(embedded_docs)} downloadable document(s) on linked page: {name}')
+            for doc_url, doc_label in embedded_docs:
+                doc_fname = os.path.basename(urllib.parse.urlparse(doc_url).path)
+                if not doc_fname:
+                    doc_fname = f"{doc_label or 'document'}.pdf"
+                saveFile(session_obj, doc_url, path, doc_fname, on_file_saved=on_file_saved)
+
+        # 5. Also save HTML bookmark
+        fname = name.replace('/', '') + '.html'
+        dst = os.path.join(path, fname) if not path.endswith('/') else path + fname
+        dst = dst.replace(':', '-').replace('"', '')
+        if not os.path.exists(dst):
+            with open(dst, 'w', encoding='utf-8') as handle:
+                print('[' + colors.OKGREEN + 'save-link' + colors.ENDC + '] |  |  +--%s' % name)
+                handle.write(f'<a href="{target_url}">{name}</a>')
+            if on_file_saved:
+                try:
+                    on_file_saved(dst, is_new=True)
+                except Exception:
+                    pass
+
     except Exception as e:
-        if os.path.exists(dst):
-            os.remove(dst)
-        print('[' + colors.FAIL + 'fail' + colors.ENDC + '] |  |  +--%s (%s)' % (name, e))
+        print('[' + colors.FAIL + 'link-error' + colors.ENDC + '] |  |  +--%s (%s)' % (name, e))
 
 
 def saveInfo(path, info, tab, on_file_saved=None):
@@ -477,6 +598,20 @@ def downloadSection(session_obj, s, path, on_file_saved=None):
         print('       |  +--' + colors.BOLD + name + colors.ENDC)
     if info:
         saveInfo(secpath, info, '|  ', on_file_saved=on_file_saved)
+        
+    if summary_tag:
+        for a_tag in summary_tag.find_all('a', href=True):
+            href = a_tag['href'].strip()
+            link_name = a_tag.get_text().strip() or 'inline_link'
+            if '/mod/resource/' in href:
+                downloadResource(session_obj, href, secpath, on_file_saved=on_file_saved)
+            elif '/mod/folder/' in href:
+                f_name = link_name.replace('/', '-')
+                f_path = os.path.join(secpath, f_name)
+                os.makedirs(f_path, exist_ok=True)
+                downloadFolder(session_obj, href, f_path + '/', on_file_saved=on_file_saved)
+            elif '/mod/url/' in href or href.startswith('http'):
+                saveLink(session_obj, href, secpath, link_name, on_file_saved=on_file_saved)
 
     # Activities: resources, folders, urls
     activities = s.find_all('li', class_=lambda c: c and 'activity' in c) or s.find_all(class_=lambda c: c and 'activity-item' in c)
