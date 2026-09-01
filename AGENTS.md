@@ -32,7 +32,7 @@ All commands are executed via `.venv/bin/python agent_tools.py`:
 - `python install.py`: Universal 1-click auto-configuration.
 
 ## 🎯 Citation Standards
-When answering questions based on course materials, cite using dual links (IDE file link + Preview link):
-`[CourseCode / FileName.pdf (Page X)](file:///absolute/path/to/file.pdf) ([Open in Preview](open-preview:///absolute/path/to/file.pdf#page=X))`
-This allows users to open the document inside their IDE editor or directly at the exact cited page in Apple Preview on macOS.
+When answering questions based on course materials, cite using dual links (Source file link + Markdown link):
+`[CourseCode / FileName.pdf (Page X)](file:///absolute/path/to/file.pdf) ([Markdown](file:///absolute/path/to/parsed/file.md))`
+This gives users instant access to both the original document (.pdf, .pptx, .docx) and the structured parsed markdown (.md).
 

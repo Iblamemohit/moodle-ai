@@ -13,7 +13,7 @@ from scraper import (
     colors
 )
 from src.config import get_config
-from src.parser import DocumentParser
+from src.parser import DocumentParser, compute_file_hash
 from src.indexer import KnowledgeIndexer
 from src.list_manager import ListManager
 from src.custom_scraper import CustomUrlManager, scrape_custom_source
@@ -68,11 +68,12 @@ def discover_available_semesters() -> Dict[str, Any]:
     }
 
 def sync_custom_sources(
+    known_catalog: Optional[Dict[str, Any]] = None,
     on_file_saved_callback=None,
     max_workers: int = 4
 ) -> Dict[str, Any]:
     """
-    Syncs all registered custom URLs from data/custom_urls.json.
+    Syncs all registered custom URLs from data/custom_urls.json using list.md catalog upfront.
     """
     config = get_config()
     output_dir = Path(config["output_dir"])
@@ -97,7 +98,7 @@ def sync_custom_sources(
     total_downloaded = 0
     for s in sources:
         print(f"  [Scraping] {s['label']} -> {s['url']}")
-        res = scrape_custom_source(s, output_dir, on_file_saved=on_file_saved_callback)
+        res = scrape_custom_source(s, output_dir, known_catalog=known_catalog, on_file_saved=on_file_saved_callback)
         count = res.get("downloaded_files_count", 0)
         total_downloaded += count
         url_mgr.update_sync_stats(s["url"], count)
@@ -113,10 +114,10 @@ def sync_custom_sources(
 def sync_moodle_courses(semester_filter: Optional[str] = None, course_index: Optional[str] = None, max_workers: int = 4, sync_custom: bool = True) -> Dict[str, Any]:
     """
     Truly asynchronous streaming sync pipeline:
-    1. Discovers courses. If semester_filter is missing, asks or returns available semesters.
-    2. Downloads files.
+    1. Inspects list.md upfront to get an in-memory catalog of all existing files.
+    2. Discovers courses and downloads only genuinely new files.
     3. Scrapes registered custom URLs.
-    4. IMMEDIATELY as each file finishes downloading, it is converted to Markdown, embedded in ChromaDB+BM25, and added to list.md on the fly!
+    4. IMMEDIATELY as each new file finishes downloading, it is converted to Markdown, embedded in ChromaDB+BM25, and added to list.md on the fly!
     """
     config = get_config()
     output_dir = Path(config["output_dir"])
@@ -128,6 +129,11 @@ def sync_moodle_courses(semester_filter: Optional[str] = None, course_index: Opt
     parser = DocumentParser(str(output_dir), parsed_dir)
     indexer = KnowledgeIndexer(chroma_dir)
     list_mgr = ListManager(workspace_dir, str(output_dir), parsed_dir)
+
+    # 1. Inspect list.md upfront
+    known_catalog = list_mgr.get_known_files_from_list()
+    if known_catalog["total_files"] > 0:
+        print(f"[Sync] 📋 Inspected list.md: Found {known_catalog['total_files']} files already indexed across courses.")
 
     lock = threading.Lock()
     processed_files = set()
@@ -147,11 +153,28 @@ def sync_moodle_courses(semester_filter: Optional[str] = None, course_index: Opt
                 return
             processed_files.add(file_path_str)
 
+        # Quick check: if not new and already cataloged in list.md, bypass parsing/indexing
+        if not is_new and str(p.resolve()) in known_catalog.get("paths", set()):
+            return
+
         ext = p.suffix.lower()
         if ext in (".pdf", ".txt", ".md", ".html", ".htm", ".pptx", ".ppt", ".docx", ".zip"):
             try:
+                try:
+                    rel_path = p.relative_to(output_dir)
+                except ValueError:
+                    rel_path = Path(p.name)
+
+                md_dest = Path(parsed_dir) / rel_path.with_suffix('.md')
+                cached_hash = parser.hashes.get(str(rel_path))
+                curr_hash = compute_file_hash(p)
+
+                # Skip re-parsing and re-indexing if file is already up to date
+                if not is_new and cached_hash == curr_hash and md_dest.exists():
+                    return
+
                 # 1. Immediately Parse to Markdown
-                chunks = parser.parse_file(p, force=is_new)
+                chunks = parser.parse_file(p, force=True)
                 if chunks:
                     # 2. Immediately Embed into ChromaDB & BM25
                     with lock:
@@ -168,7 +191,7 @@ def sync_moodle_courses(semester_filter: Optional[str] = None, course_index: Opt
 
     # Check if only custom sync was requested
     if semester_filter and semester_filter.lower() == "custom":
-        custom_res = sync_custom_sources(on_file_saved_callback=on_file_saved_callback, max_workers=max_workers)
+        custom_res = sync_custom_sources(known_catalog=known_catalog, on_file_saved_callback=on_file_saved_callback, max_workers=max_workers)
         print("\n[Sync] Waiting for streaming indexing pipeline to finish remaining files...")
         concurrent.futures.wait(futures)
         executor.shutdown(wait=True)
@@ -225,7 +248,7 @@ def sync_moodle_courses(semester_filter: Optional[str] = None, course_index: Opt
             print(f"\n[Sync] 🚀 Starting streaming sync for {len(target_courses)} course(s) (Semester: {semester_filter})...")
             for course_item in target_courses:
                 sem_label = f"Semester_{course_item['sem']}" if course_item.get("sem") else "General"
-                downloadCourse(course_item, sem_label, on_file_saved=on_file_saved_callback)
+                downloadCourse(course_item, sem_label, known_catalog=known_catalog, on_file_saved=on_file_saved_callback)
             moodle_courses_synced = len(target_courses)
     else:
         print(f"[Sync Notice] Moodle credentials not configured or failed ({err}). Proceeding with custom sources if any.")
@@ -233,7 +256,7 @@ def sync_moodle_courses(semester_filter: Optional[str] = None, course_index: Opt
     # Also sync registered custom URLs
     custom_sources_count = 0
     if sync_custom:
-        custom_res = sync_custom_sources(on_file_saved_callback=on_file_saved_callback, max_workers=max_workers)
+        custom_res = sync_custom_sources(known_catalog=known_catalog, on_file_saved_callback=on_file_saved_callback, max_workers=max_workers)
         custom_sources_count = custom_res.get("sources_synced", 0)
 
     # Wait for all background parsing & embedding tasks to complete

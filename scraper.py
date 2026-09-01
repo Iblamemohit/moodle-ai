@@ -305,7 +305,7 @@ def saveFile(session_obj, src, path, name, on_file_saved=None):
     dst = os.path.join(path, name) if not path.endswith('/') else path + name
     dst = dst.replace(':', '-').replace('"', '')
 
-    if os.path.exists(dst):
+    if os.path.exists(dst) and os.path.getsize(dst) > 0:
         print('[' + colors.OKBLUE + 'skip' + colors.ENDC + '] |  |  +--%s' % name)
         if on_file_saved:
             try:
@@ -343,6 +343,10 @@ def saveLink(session_obj, url, path, name, on_file_saved=None):
     global files
     next(files)
     try:
+        # Check if the HTML bookmark or target file already exists
+        fname = name.replace('/', '') + '.html'
+        dst_html = os.path.join(path, fname).replace(':', '-').replace('"', '')
+
         # 1. Fetch Moodle URL wrapper page to resolve destination
         r = session_obj.get(url, allow_redirects=True)
         target_url = url
@@ -373,7 +377,7 @@ def saveLink(session_obj, url, path, name, on_file_saved=None):
         elif 'dropbox.com' in target_url and 'dl=0' in target_url:
             target_url = target_url.replace('dl=0', 'dl=1')
 
-        # 3. Probe target URL
+        # 3. Probe target URL with stream=True (headers only)
         res = session_obj.get(target_url, stream=True, allow_redirects=True)
         headers = {k.lower(): v for k, v in res.headers.items()}
         content_type = headers.get('content-type', '').lower()
@@ -381,10 +385,9 @@ def saveLink(session_obj, url, path, name, on_file_saved=None):
         # Check Content-Disposition for filename
         cd = headers.get('content-disposition', '')
         dl_name = None
-        m_cd = re.search(r"filename\*?=(?:UTF-8'')?["']?([^"';\r\n]+)", cd, re.IGNORECASE)
-]+)', cd, re.IGNORECASE)
+        m_cd = re.search(r"filename\*?=(?:UTF-8'')?[\"']?([^\"';\r\n]+)", cd, re.IGNORECASE)
         if m_cd:
-            dl_name = m_cd.group(1).strip('"' ')
+            dl_name = m_cd.group(1).strip('\"\' ')
 
         parsed_target = urllib.parse.urlparse(res.url)
         path_base = os.path.basename(parsed_target.path)
@@ -414,6 +417,13 @@ def saveLink(session_obj, url, path, name, on_file_saved=None):
                         ext = '.docx'
                     dl_name = f"{name}{ext}"
             dl_name = urllib.request.url2pathname(dl_name).replace(':', '-').replace('"', '')
+            dst_doc = os.path.join(path, dl_name)
+            if os.path.exists(dst_doc) and os.path.getsize(dst_doc) > 0:
+                res.close()
+                print('[' + colors.OKBLUE + 'skip' + colors.ENDC + '] |  |  +--%s' % dl_name)
+                if on_file_saved:
+                    on_file_saved(dst_doc, is_new=False)
+                return
             saveFile(session_obj, res.url, path, dl_name, on_file_saved=on_file_saved)
             return
 
@@ -436,18 +446,18 @@ def saveLink(session_obj, url, path, name, on_file_saved=None):
                 saveFile(session_obj, doc_url, path, doc_fname, on_file_saved=on_file_saved)
 
         # 5. Also save HTML bookmark
-        fname = name.replace('/', '') + '.html'
-        dst = os.path.join(path, fname) if not path.endswith('/') else path + fname
-        dst = dst.replace(':', '-').replace('"', '')
-        if not os.path.exists(dst):
-            with open(dst, 'w', encoding='utf-8') as handle:
+        if not os.path.exists(dst_html) or os.path.getsize(dst_html) == 0:
+            with open(dst_html, 'w', encoding='utf-8') as handle:
                 print('[' + colors.OKGREEN + 'save-link' + colors.ENDC + '] |  |  +--%s' % name)
                 handle.write(f'<a href="{target_url}">{name}</a>')
             if on_file_saved:
                 try:
-                    on_file_saved(dst, is_new=True)
+                    on_file_saved(dst_html, is_new=True)
                 except Exception:
                     pass
+        else:
+            if on_file_saved:
+                on_file_saved(dst_html, is_new=False)
 
     except Exception as e:
         print('[' + colors.FAIL + 'link-error' + colors.ENDC + '] |  |  +--%s (%s)' % (name, e))
@@ -461,7 +471,7 @@ def saveInfo(path, info, tab, on_file_saved=None):
         dst = os.path.join(path, name) if not path.endswith('/') else path + name
         dst = dst.replace(':', '-').replace('"', '')
 
-        if os.path.exists(dst):
+        if os.path.exists(dst) and os.path.getsize(dst) > 0:
             print('[' + colors.OKBLUE + 'skip' + colors.ENDC + '] ' + tab + '+--%s' % name)
             if on_file_saved:
                 try:
@@ -483,7 +493,7 @@ def saveInfo(path, info, tab, on_file_saved=None):
             print('[' + colors.FAIL + 'fail' + colors.ENDC + '] ' + tab + '+--%s (%s)' % (name, e))
 
 
-def downloadResource(session_obj, res, path, on_file_saved=None):
+def downloadResource(session_obj, res, path, activity_name=None, course_key=None, known_catalog=None, on_file_saved=None):
     try:
         if isinstance(res, str):
             src = res
@@ -496,43 +506,159 @@ def downloadResource(session_obj, res, path, on_file_saved=None):
     except (TypeError, AttributeError, KeyError):
         return
 
-    r = session_obj.get(src, allow_redirects=True)
+    # 1. Check if src directly contains an uploaded filename (e.g. static pluginfile URL)
+    parsed_src = urllib.parse.urlparse(src)
+    url_base = os.path.basename(parsed_src.path)
+    if url_base and '.' in url_base and not url_base.endswith('.php'):
+        tentative_name = urllib.parse.unquote(url_base).replace(':', '-').replace('"', '')
+        tentative_dst = os.path.abspath(os.path.join(path, tentative_name))
+        
+        # Check against list.md catalog upfront (0 network requests, 0 disk scans)
+        if known_catalog:
+            if tentative_dst in known_catalog.get("paths", set()) or (course_key, tentative_name) in known_catalog.get("course_files", set()):
+                print('[' + colors.OKBLUE + 'skip' + colors.ENDC + '] |  |  +--%s' % tentative_name)
+                if on_file_saved:
+                    try:
+                        on_file_saved(tentative_dst, is_new=False)
+                    except Exception:
+                        pass
+                return
+
+        if os.path.exists(tentative_dst) and os.path.getsize(tentative_dst) > 0:
+            print('[' + colors.OKBLUE + 'skip' + colors.ENDC + '] |  |  +--%s' % tentative_name)
+            if on_file_saved:
+                try:
+                    on_file_saved(tentative_dst, is_new=False)
+                except Exception:
+                    pass
+            return
+
+    # 2. Request headers only with stream=True
+    r = session_obj.get(src, stream=True, allow_redirects=True)
     if r.status_code == 200:
         headers = {k.lower(): v for k, v in r.headers.items()}
+        content_type = headers.get('content-type', '').lower()
         name = None
+        
+        # Priority 1: Original uploaded filename in Content-Disposition header
         if 'content-disposition' in headers:
             cd = headers['content-disposition']
-            m = re.search(r'filename\*?=(?:UTF-8\'\')?["\']?([^"\';\r\n]+)', cd, re.IGNORECASE)
+            m = re.search(r"filename\*?=(?:UTF-8'')?[\"']?([^\"';\r\n]+)", cd, re.IGNORECASE)
             if m:
-                name = m.group(1).strip('"\' ')
+                name = m.group(1).strip('\"\' ')
         
+        # Priority 2: Original uploaded filename in final redirected URL
         if not name:
             parsed = urllib.parse.urlparse(r.url)
             basename = os.path.basename(parsed.path)
-            if basename and '.' in basename:
+            if basename and '.' in basename and not basename.endswith('.php'):
                 name = basename
-            else:
-                soup = BeautifulSoup(r.text, 'html.parser')
-                region = soup.find(class_='region-content') or soup.find(class_='resourcecontent')
-                if region and region.find('a'):
-                    src = region.find('a').get('href', src)
-                frames = soup.find_all('frame')
-                if len(frames) > 1 and frames[1].get('src'):
-                    src = frames[1]['src']
-                name = os.path.basename(urllib.parse.urlparse(src).path) or 'resource'
+        
+        # Check if it's an HTML frame/redirect page
+        if not name and 'text/html' in content_type:
+            soup = BeautifulSoup(r.text, 'html.parser')
+            region = soup.find(class_='region-content') or soup.find(class_='resourcecontent')
+            if region and region.find('a'):
+                inner_src = region.find('a').get('href')
+                if inner_src and inner_src != src:
+                    return downloadResource(session_obj, inner_src, path, activity_name=activity_name, course_key=course_key, known_catalog=known_catalog, on_file_saved=on_file_saved)
+            frames = soup.find_all('frame')
+            if len(frames) > 1 and frames[1].get('src'):
+                inner_src = frames[1]['src']
+                if inner_src and inner_src != src:
+                    return downloadResource(session_obj, inner_src, path, activity_name=activity_name, course_key=course_key, known_catalog=known_catalog, on_file_saved=on_file_saved)
 
-        name = urllib.request.url2pathname(name)
-        saveFile(session_obj, r.url if r.url else src, path, name, on_file_saved=on_file_saved)
+        # Priority 3: Clean activity name with proper detected extension
+        if not name:
+            ext = '.pdf'
+            if 'presentation' in content_type or 'powerpoint' in content_type:
+                ext = '.pptx'
+            elif 'zip' in content_type:
+                ext = '.zip'
+            elif 'word' in content_type:
+                ext = '.docx'
+            elif 'text/plain' in content_type:
+                ext = '.txt'
+            elif 'text/html' in content_type:
+                ext = '.html'
+
+            if activity_name:
+                clean_act = re.sub(r'[\\/*?:"<>|]', '_', activity_name).strip()
+                if not any(clean_act.lower().endswith(e) for e in ('.pdf', '.pptx', '.ppt', '.docx', '.zip', '.txt', '.html')):
+                    clean_act += ext
+                name = clean_act
+            else:
+                name = f"resource{ext}"
+
+        name = urllib.request.url2pathname(name).replace(':', '-').replace('"', '')
+        dst = os.path.abspath(os.path.join(path, name))
+        
+        # Check if already cataloged in list.md or on disk
+        if known_catalog and (dst in known_catalog.get("paths", set()) or (course_key, name) in known_catalog.get("course_files", set())):
+            r.close()
+            print('[' + colors.OKBLUE + 'skip' + colors.ENDC + '] |  |  +--%s' % name)
+            if on_file_saved:
+                try:
+                    on_file_saved(dst, is_new=False)
+                except Exception:
+                    pass
+            return
+
+        if os.path.exists(dst) and os.path.getsize(dst) > 0:
+            r.close()
+            print('[' + colors.OKBLUE + 'skip' + colors.ENDC + '] |  |  +--%s' % name)
+            if on_file_saved:
+                try:
+                    on_file_saved(dst, is_new=False)
+                except Exception:
+                    pass
+            if dst.lower().endswith('.zip'):
+                extract_dir = os.path.splitext(dst)[0]
+                if not os.path.exists(extract_dir) or not os.listdir(extract_dir):
+                    extract_zip(dst, extract_dir, on_file_saved=on_file_saved)
+            return
+
+        # It's a new file - stream blocks directly to file
+        try:
+            os.makedirs(os.path.dirname(dst), exist_ok=True)
+            with open(dst, 'wb') as handle:
+                print('[' + colors.OKGREEN + 'save' + colors.ENDC + '] |  |  +--%s' % name)
+                for block in r.iter_content(65536):
+                    if not block:
+                        break
+                    handle.write(block)
+            if on_file_saved:
+                try:
+                    on_file_saved(dst, is_new=True)
+                except Exception:
+                    pass
+            if dst.lower().endswith('.zip'):
+                extract_dir = os.path.splitext(dst)[0]
+                extract_zip(dst, extract_dir, on_file_saved=on_file_saved)
+        except Exception as e:
+            print('[' + colors.FAIL + 'fail' + colors.ENDC + '] |  |  +--%s (%s)' % (name, e))
     else:
         print('ERROR: ' + str(r.status_code) + ' ' + str(r.reason))
 
 
-def downloadFolder(session_obj, folder_url, path, on_file_saved=None):
-    """Downloads all files inside a Moodle folder activity (/mod/folder/view.php)"""
+def downloadFolder(session_obj, folder_url, path, course_key=None, known_catalog=None, on_file_saved=None):
+    """Downloads all files inside a Moodle folder activity (/mod/folder/view.php) preserving uploaded file names."""
     r = session_obj.get(folder_url)
     if r.status_code == 200:
         soup = BeautifulSoup(r.text, 'html.parser')
-        # Check for download folder button
+        
+        # 1. Parse individual files inside folder view (preserves exact uploaded filenames)
+        pluginfile_links = soup.find_all('a', href=lambda h: h and '/pluginfile.php/' in h)
+        if pluginfile_links:
+            for a in pluginfile_links:
+                a_copy = BeautifulSoup(str(a), 'html.parser')
+                for hide in a_copy.find_all(class_='accesshide'):
+                    hide.decompose()
+                clean_f_text = a_copy.get_text().strip()
+                downloadResource(session_obj, a.get('href'), path, activity_name=clean_f_text, course_key=course_key, known_catalog=known_catalog, on_file_saved=on_file_saved)
+            return
+
+        # 2. Check for download folder button as fallback
         btn = soup.find('form', action=lambda a: a and 'download_folder.php' in a)
         if btn:
             action = btn.get('action')
@@ -541,15 +667,11 @@ def downloadFolder(session_obj, folder_url, path, on_file_saved=None):
             if resp.status_code == 200:
                 name = 'folder.zip'
                 cd = resp.headers.get('content-disposition', '')
-                m = re.search(r'filename\*?=(?:UTF-8\'\')?["\']?([^"\';\r\n]+)', cd, re.IGNORECASE)
+                m = re.search(r"filename\*?=(?:UTF-8'')?[\"']?([^\"';\r\n]+)", cd, re.IGNORECASE)
                 if m:
-                    name = m.group(1).strip('"\' ')
+                    name = m.group(1).strip('\"\' ')
                 saveFile(session_obj, resp.url, path, name, on_file_saved=on_file_saved)
                 return
-        
-        # Parse individual files inside folder view
-        for a in soup.find_all('a', href=lambda h: h and '/pluginfile.php/' in h):
-            downloadResource(session_obj, a.get('href'), path, on_file_saved=on_file_saved)
 
 
 def is_generic_or_date_section(name):
@@ -571,7 +693,7 @@ def is_generic_or_date_section(name):
     return False
 
 
-def downloadSection(session_obj, s, path, on_file_saved=None):
+def downloadSection(session_obj, s, path, course_key=None, known_catalog=None, on_file_saved=None):
     global sections
     sec_id = s.get('id', '')
     
@@ -604,12 +726,12 @@ def downloadSection(session_obj, s, path, on_file_saved=None):
             href = a_tag['href'].strip()
             link_name = a_tag.get_text().strip() or 'inline_link'
             if '/mod/resource/' in href:
-                downloadResource(session_obj, href, secpath, on_file_saved=on_file_saved)
+                downloadResource(session_obj, href, secpath, activity_name=link_name, course_key=course_key, known_catalog=known_catalog, on_file_saved=on_file_saved)
             elif '/mod/folder/' in href:
                 f_name = link_name.replace('/', '-')
                 f_path = os.path.join(secpath, f_name)
                 os.makedirs(f_path, exist_ok=True)
-                downloadFolder(session_obj, href, f_path + '/', on_file_saved=on_file_saved)
+                downloadFolder(session_obj, href, f_path + '/', course_key=course_key, known_catalog=known_catalog, on_file_saved=on_file_saved)
             elif '/mod/url/' in href or href.startswith('http'):
                 saveLink(session_obj, href, secpath, link_name, on_file_saved=on_file_saved)
 
@@ -622,17 +744,24 @@ def downloadSection(session_obj, s, path, on_file_saved=None):
             continue
         href = link_tag.get('href', '')
         
+        # Clean activity name (remove accesshide / accessibility labels)
+        inst = act.find(class_='instancename') or act.find(class_='activityname')
+        act_name = ''
+        if inst:
+            inst_copy = BeautifulSoup(str(inst), 'html.parser')
+            for hide in inst_copy.find_all(class_='accesshide'):
+                hide.decompose()
+            act_name = inst_copy.get_text().strip()
+        
         if any('resource' in c for c in classes) or '/mod/resource/' in href:
-            downloadResource(session_obj, href, secpath, on_file_saved=on_file_saved)
+            downloadResource(session_obj, href, secpath, activity_name=act_name, course_key=course_key, known_catalog=known_catalog, on_file_saved=on_file_saved)
         elif any('folder' in c for c in classes) or '/mod/folder/' in href:
-            inst = act.find(class_='instancename') or act.find(class_='activityname')
-            f_name = inst.get_text().strip().replace('/', '-') if inst else 'Folder'
+            f_name = act_name.replace('/', '-') if act_name else 'Folder'
             f_path = os.path.join(secpath, f_name)
             os.makedirs(f_path, exist_ok=True)
-            downloadFolder(session_obj, href, f_path + '/', on_file_saved=on_file_saved)
+            downloadFolder(session_obj, href, f_path + '/', course_key=course_key, known_catalog=known_catalog, on_file_saved=on_file_saved)
         elif any('url' in c for c in classes) or '/mod/url/' in href:
-            inst = act.find(class_='instancename') or act.find(class_='activityname')
-            url_name = inst.get_text().strip() if inst else 'link'
+            url_name = act_name if act_name else 'link'
             saveLink(session_obj, href, secpath, url_name, on_file_saved=on_file_saved)
 
     # Generalbox foldertree
@@ -647,7 +776,7 @@ def downloadSection(session_obj, s, path, on_file_saved=None):
                 os.makedirs(subpath, exist_ok=True)
             print('       |  +--' + colors.BOLD + label + colors.ENDC)
             for r in res:
-                downloadResource(session_obj, r, subpath + '/', on_file_saved=on_file_saved)
+                downloadResource(session_obj, r, subpath + '/', course_key=course_key, known_catalog=known_catalog, on_file_saved=on_file_saved)
 
     # Remove directory if empty
     if os.path.exists(secpath) and not os.listdir(secpath):
@@ -657,7 +786,7 @@ def downloadSection(session_obj, s, path, on_file_saved=None):
             pass
 
 
-def downloadCourse(course_item, sem_label, on_file_saved=None):
+def downloadCourse(course_item, sem_label, known_catalog=None, on_file_saved=None):
     session_obj = course_item['session']
     global files
     global sections
@@ -687,7 +816,7 @@ def downloadCourse(course_item, sem_label, on_file_saved=None):
             sec_elements = soup.find_all(class_=lambda c: c and ('course-section' in c or 'section main' in c))
         
         for s in sec_elements:
-            downloadSection(session_obj, s, course_dir, on_file_saved=on_file_saved)
+            downloadSection(session_obj, s, course_dir, course_key=course_item['key'], known_catalog=known_catalog, on_file_saved=on_file_saved)
 
         # Remove any empty subdirectories left behind
         for root_d, dirs, files_list in os.walk(course_dir, topdown=False):

@@ -145,6 +145,7 @@ def sanitize_filename(name: str) -> str:
 def scrape_custom_source(
     source_entry: Dict[str, Any],
     output_base_dir: Path,
+    known_catalog: Optional[Dict[str, Any]] = None,
     on_file_saved: Optional[Callable[[str, bool], None]] = None,
     timeout: int = 25
 ) -> Dict[str, Any]:
@@ -182,17 +183,29 @@ def scrape_custom_source(
                 filename = f"{label}.pdf"
             filename = sanitize_filename(filename)
 
-            target_file = dest_folder / filename
-            is_new = not target_file.exists()
+            target_file = (dest_folder / filename).resolve()
+            
+            # Check against list.md catalog upfront
+            is_cataloged = False
+            if known_catalog:
+                if str(target_file) in known_catalog.get("paths", set()) or (label, filename) in known_catalog.get("course_files", set()):
+                    is_cataloged = True
 
-            with open(target_file, "wb") as f:
-                for chunk in res.iter_content(chunk_size=65536):
-                    if chunk:
-                        f.write(chunk)
+            if is_cataloged or (target_file.exists() and target_file.stat().st_size > 0):
+                res.close()
+                print(f"[Custom Scraper] Skipping cataloged file: {filename}")
+                downloaded_files.append(str(target_file))
+                if on_file_saved:
+                    on_file_saved(str(target_file), False)
+            else:
+                with open(target_file, "wb") as f:
+                    for chunk in res.iter_content(chunk_size=65536):
+                        if chunk:
+                            f.write(chunk)
 
-            downloaded_files.append(str(target_file.resolve()))
-            if on_file_saved:
-                on_file_saved(str(target_file.resolve()), is_new)
+                downloaded_files.append(str(target_file))
+                if on_file_saved:
+                    on_file_saved(str(target_file), True)
 
         else:
             # HTML Webpage - Parse for PDF links
@@ -217,29 +230,40 @@ def scrape_custom_source(
 
             for pdf_link, link_text in found_pdf_links:
                 try:
+                    # Pre-determine filename to check against list.md before making any network request
+                    parsed_p = urllib.parse.urlparse(pdf_link)
+                    fname = urllib.parse.unquote(parsed_p.path.split("/")[-1])
+                    if not fname.lower().endswith(".pdf"):
+                        if link_text:
+                            fname = sanitize_filename(link_text) + ".pdf"
+                        else:
+                            fname = sanitize_filename(fname) + ".pdf"
+                    fname = sanitize_filename(fname)
+                    if not fname or fname == ".pdf":
+                        fname = f"document_{len(downloaded_files)+1}.pdf"
+
+                    target_file = (dest_folder / fname).resolve()
+                    if known_catalog and (str(target_file) in known_catalog.get("paths", set()) or (label, fname) in known_catalog.get("course_files", set())):
+                        downloaded_files.append(str(target_file))
+                        if on_file_saved:
+                            on_file_saved(str(target_file), False)
+                        continue
+
+                    if target_file.exists() and target_file.stat().st_size > 0:
+                        # Already on disk - skip network request completely!
+                        downloaded_files.append(str(target_file))
+                        if on_file_saved:
+                            on_file_saved(str(target_file), False)
+                        continue
+
                     pdf_res = session.get(pdf_link, timeout=timeout, allow_redirects=True, stream=True)
                     if pdf_res.status_code != 200:
                         continue
                     
                     pdf_ct = pdf_res.headers.get("Content-Type", "").lower()
-                    parsed_p = urllib.parse.urlparse(pdf_res.url)
-                    fname = urllib.parse.unquote(parsed_p.path.split("/")[-1])
-                    
-                    if not fname.lower().endswith(".pdf"):
-                        if "application/pdf" in pdf_ct or pdf_link.lower().endswith(".pdf"):
-                            if link_text:
-                                fname = sanitize_filename(link_text) + ".pdf"
-                            else:
-                                fname = sanitize_filename(fname) + ".pdf"
-                        else:
-                            continue
-
-                    fname = sanitize_filename(fname)
-                    if not fname or fname == ".pdf":
-                        fname = f"document_{len(downloaded_files)+1}.pdf"
-
-                    target_file = dest_folder / fname
-                    is_new = not target_file.exists()
+                    if not ("application/pdf" in pdf_ct or pdf_link.lower().endswith(".pdf") or pdf_res.url.lower().endswith(".pdf")):
+                        pdf_res.close()
+                        continue
 
                     with open(target_file, "wb") as f:
                         for chunk in pdf_res.iter_content(chunk_size=65536):
@@ -248,7 +272,7 @@ def scrape_custom_source(
 
                     downloaded_files.append(str(target_file.resolve()))
                     if on_file_saved:
-                        on_file_saved(str(target_file.resolve()), is_new)
+                        on_file_saved(str(target_file.resolve()), True)
 
                 except Exception as dl_err:
                     errors.append(f"Failed to download {pdf_link}: {dl_err}")

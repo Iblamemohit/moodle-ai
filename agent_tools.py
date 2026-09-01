@@ -324,19 +324,26 @@ def moodle_ask(query: str, doc_filter: Optional[str] = None, course_filter: Opti
             has_confident_match = True
 
         src_path = Path(meta.get("source", ""))
-        pdf_url = None
-        preview_url = None
+        file_url = None
+        md_url = None
         page_num = meta.get("page", 1)
         if src_path.exists():
-            quoted_path = urllib.parse.quote(str(src_path.resolve()), safe="/:")
-            pdf_url = f"file://{src_path.resolve()}"
-            preview_url = f"open-preview://{quoted_path}#page={page_num}"
+            file_url = f"file://{src_path.resolve()}"
+            try:
+                rel_path = src_path.relative_to(output_dir)
+            except ValueError:
+                rel_path = Path(src_path.name)
+            md_path = (parsed_dir / rel_path).with_suffix(".md")
+            if md_path.exists():
+                md_url = f"file://{md_path.resolve()}"
 
         citation_label = f"{meta.get('course')} / {meta.get('filename')} (Page {page_num})"
-        if pdf_url and preview_url:
-            citation = f"[{citation_label}]({pdf_url}) ([Open in Preview]({preview_url}))"
-        elif pdf_url:
-            citation = f"[{citation_label}]({pdf_url}#page={page_num})"
+        if file_url and md_url:
+            citation = f"[{citation_label}]({file_url}) ([Markdown]({md_url}))"
+        elif file_url:
+            citation = f"[{citation_label}]({file_url})"
+        elif md_url:
+            citation = f"[{citation_label}]({md_url})"
         else:
             citation = f"[{citation_label}]"
 
@@ -351,47 +358,51 @@ def moodle_ask(query: str, doc_filter: Optional[str] = None, course_filter: Opti
             "bm25_score": r.get("bm25_score", 0.0),
             "text": r["text"],
             "pdf_path": str(src_path.resolve()) if src_path.exists() else None,
-            "pdf_url": pdf_url,
-            "preview_url": preview_url,
+            "pdf_url": file_url,
+            "md_url": md_url,
             "citation": citation
         })
 
     # 2. Check if Fallback is needed
     # If no confident matches were found in course materials, query Wikipedia
-    fallback_results = []
-    if (not has_confident_match) and fallback_to_web:
-        wiki_hits = search_wikipedia(query, max_results=2)
-        for w in wiki_hits:
-            fallback_results.append({
-                "source_type": "wikipedia_fallback",
-                "title": w["title"],
-                "url": w["url"],
-                "summary": w["summary"],
-                "citation": f"[Wikipedia: {w['title']}]({w['url']})"
-            })
+    fallback_chunks = []
+    used_fallback = False
+    if not has_confident_match:
+        try:
+            print(f"[RAG Engine] Low confidence on course materials. Performing fallback search...")
+            wiki_summary = query_wikipedia(query)
+            if wiki_summary:
+                used_fallback = True
+                fallback_chunks.append({
+                    "source_type": "wikipedia",
+                    "title": wiki_summary["title"],
+                    "url": wiki_summary["url"],
+                    "summary": wiki_summary["summary"],
+                    "citation": f"[{wiki_summary['title']}]({wiki_summary['url']})"
+                })
+        except Exception as ex:
+            print(f"[Wikipedia Fallback Error]: {ex}")
 
     return {
-        "status": "success",
         "query": query,
-        "total_moodle_hits": len(retrieved_chunks),
         "has_confident_moodle_hit": has_confident_match,
-        "moodle_context": retrieved_chunks if has_confident_match else retrieved_chunks[:2],
-        "fallback_context": fallback_results,
-        "used_fallback": len(fallback_results) > 0
+        "used_fallback": used_fallback,
+        "moodle_context": retrieved_chunks,
+        "fallback_context": fallback_chunks
     }
+
 
 def moodle_quiz(course: Optional[str] = None, num_questions: int = 5) -> Dict[str, Any]:
     """
-    [Tool: /quiz] Retrieves representative course material chunks to generate practice quizzes.
+    Generates practice questions grounded in course materials.
     """
     config = get_config()
-    indexer = KnowledgeIndexer(config["chroma_dir"])
+    chroma_dir = config["chroma_dir"]
     parsed_dir = Path(config["parsed_dir"])
     output_dir = Path(config["output_dir"])
-    
-    # Ensure Preview URL handler app is registered
-    ensure_preview_app_installed()
 
+    indexer = KnowledgeIndexer(chroma_dir)
+    
     # Query broad foundational concepts for the course
     query = "introduction definitions key principles formulas summary concepts"
     results = indexer.hybrid_search(query=query, course_filter=course, top_k=num_questions * 2)
@@ -400,19 +411,26 @@ def moodle_quiz(course: Optional[str] = None, num_questions: int = 5) -> Dict[st
     for r in results[:num_questions]:
         meta = r["metadata"]
         src_path = Path(meta.get("source", ""))
-        pdf_url = None
-        preview_url = None
+        file_url = None
+        md_url = None
         page_num = meta.get("page", 1)
         if src_path.exists():
-            quoted_path = urllib.parse.quote(str(src_path.resolve()), safe="/:")
-            pdf_url = f"file://{src_path.resolve()}"
-            preview_url = f"open-preview://{quoted_path}#page={page_num}"
+            file_url = f"file://{src_path.resolve()}"
+            try:
+                rel_path = src_path.relative_to(output_dir)
+            except ValueError:
+                rel_path = Path(src_path.name)
+            md_path = (parsed_dir / rel_path).with_suffix(".md")
+            if md_path.exists():
+                md_url = f"file://{md_path.resolve()}"
 
         citation_label = f"{meta.get('course')} / {meta.get('filename')} (Page {page_num})"
-        if pdf_url and preview_url:
-            citation = f"[{citation_label}]({pdf_url}) ([Open in Preview]({preview_url}))"
-        elif pdf_url:
-            citation = f"[{citation_label}]({pdf_url}#page={page_num})"
+        if file_url and md_url:
+            citation = f"[{citation_label}]({file_url}) ([Markdown]({md_url}))"
+        elif file_url:
+            citation = f"[{citation_label}]({file_url})"
+        elif md_url:
+            citation = f"[{citation_label}]({md_url})"
         else:
             citation = f"[{citation_label}]"
 
@@ -422,8 +440,8 @@ def moodle_quiz(course: Optional[str] = None, num_questions: int = 5) -> Dict[st
             "page": page_num,
             "text": r["text"],
             "pdf_path": str(src_path.resolve()) if src_path.exists() else None,
-            "pdf_url": pdf_url,
-            "preview_url": preview_url,
+            "pdf_url": file_url,
+            "md_url": md_url,
             "citation": citation
         })
 

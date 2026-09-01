@@ -1,4 +1,5 @@
 import os
+import re
 import datetime
 import urllib.parse
 from pathlib import Path
@@ -11,6 +12,56 @@ class ListManager:
         self.output_dir = Path(output_dir)
         self.parsed_dir = Path(parsed_dir)
         self.list_file_path = self.workspace_dir / list_file
+
+    def get_known_files_from_list(self) -> Dict[str, Any]:
+        """
+        Inspects list.md upfront to extract all already-cataloged files, courses, and file paths.
+        Returns:
+          - 'paths': set of normalized file paths
+          - 'filenames': set of filenames
+          - 'course_files': set of (course_key, filename)
+          - 'total_files': count of indexed files
+        """
+        known = {
+            "paths": set(),
+            "filenames": set(),
+            "course_files": set(),
+            "total_files": 0
+        }
+        if not self.list_file_path.exists():
+            return known
+
+        try:
+            with open(self.list_file_path, "r", encoding="utf-8") as f:
+                content = f.read()
+
+            current_course = None
+            for line in content.splitlines():
+                line = line.strip()
+                if line.startswith("### 📖"):
+                    current_course = line.replace("### 📖", "").strip()
+                elif line.startswith("| [") and "file://" in line:
+                    m_path = re.search(r'file://([^)\s]+)', line)
+                    m_name = re.search(r'\| \[([^\]]+)\]', line)
+                    if m_path:
+                        fpath = urllib.parse.unquote(m_path.group(1))
+                        clean_path = os.path.abspath(fpath)
+                        known["paths"].add(clean_path)
+                        fname = os.path.basename(clean_path)
+                        known["filenames"].add(fname)
+                        if current_course:
+                            known["course_files"].add((current_course, fname))
+                    elif m_name:
+                        fname = m_name.group(1).strip()
+                        known["filenames"].add(fname)
+                        if current_course:
+                            known["course_files"].add((current_course, fname))
+
+            known["total_files"] = len(known["paths"]) or len(known["filenames"])
+        except Exception as ex:
+            print(f"[ListManager] Warning: Could not inspect list.md: {ex}")
+
+        return known
 
     def get_file_stats(self, file_path: Path) -> Dict[str, Any]:
         size_bytes = file_path.stat().st_size if file_path.exists() else 0
@@ -123,11 +174,18 @@ class ListManager:
                 for f in files:
                     status = "✅ Parsed & Indexed" if f["is_parsed"] else "⏳ Pending Parse"
                     full_src_path = (self.output_dir / f["rel_path"]).resolve()
-                    if full_src_path.exists():
-                        quoted_path = urllib.parse.quote(str(full_src_path), safe="/:")
+                    full_md_path = (self.parsed_dir / f["rel_path"]).with_suffix(".md").resolve()
+                    
+                    if full_src_path.exists() and full_md_path.exists():
                         file_url = f"file://{full_src_path}"
-                        preview_url = f"open-preview://{quoted_path}#page=1"
-                        doc_display = f"[{f['name']}]({file_url}) ([Preview]({preview_url}))"
+                        md_url = f"file://{full_md_path}"
+                        doc_display = f"[{f['name']}]({file_url}) ([Markdown]({md_url}))"
+                    elif full_src_path.exists():
+                        file_url = f"file://{full_src_path}"
+                        doc_display = f"[{f['name']}]({file_url})"
+                    elif full_md_path.exists():
+                        md_url = f"file://{full_md_path}"
+                        doc_display = f"[{f['name']}]({md_url})"
                     else:
                         doc_display = f"`{f['name']}`"
                     lines.append(f"| {doc_display} | {f['ext']} | {f['size']} | {f['pages']} | {status} |")
