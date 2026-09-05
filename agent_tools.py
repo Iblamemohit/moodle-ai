@@ -3,25 +3,32 @@ import sys
 import json
 import urllib.parse
 import subprocess
-import plistlib
 import shutil
 from pathlib import Path
 from typing import Dict, Any, Optional, List
 
+# Reconfigure console streams on Windows to prevent UnicodeEncodeError
+if sys.platform == "win32":
+    try:
+        if hasattr(sys.stdout, "reconfigure"):
+            sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+        if hasattr(sys.stderr, "reconfigure"):
+            sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
+
 from src.config import get_config, save_env_config, init_env_template
-from src.scraper_sync import sync_moodle_courses, discover_available_semesters
-from src.indexer import KnowledgeIndexer
-from src.list_manager import ListManager
-from src.web_search import search_wikipedia
-from src.custom_scraper import CustomUrlManager
 
 def ensure_preview_app_installed() -> bool:
     """
     Ensures that the native macOS OpenInPreview.app URL handler is installed
     in ~/Applications/OpenInPreview.app and registered with LaunchServices to handle
-    'open-preview://' and 'preview-pdf://' schemes.
+    'open-preview://' and 'preview-pdf://' schemes. Returns False on non-macOS platforms.
     """
+    if sys.platform != "darwin":
+        return False
     try:
+        import plistlib
         app_path = os.path.expanduser("~/Applications/OpenInPreview.app")
         plist_path = os.path.join(app_path, "Contents/Info.plist")
         
@@ -66,7 +73,7 @@ end open location
 
 def moodle_open_pdf(path_or_url_or_query: str, page: int = 1) -> Dict[str, Any]:
     """
-    [Tool: /open] Resolves a PDF file path or search query and launches it directly in macOS Preview.
+    [Tool: /open] Resolves a PDF file path or search query and launches it in the system viewer.
     """
     config = get_config()
     output_dir = Path(config["output_dir"])
@@ -96,8 +103,12 @@ def moodle_open_pdf(path_or_url_or_query: str, page: int = 1) -> Dict[str, Any]:
             pass
 
     if raw.startswith("localhost/"):
-        raw = "/" + raw[len("localhost/"):]
-    if not raw.startswith("/") and os.path.exists("/" + raw):
+        raw = raw[len("localhost/"):]
+
+    # On Windows, normalize leading slashes before drive letters (e.g. /C:/path -> C:/path)
+    if raw.startswith("/") and len(raw) > 2 and raw[2] == ":":
+        raw = raw[1:]
+    elif not raw.startswith("/") and os.path.exists("/" + raw):
         raw = "/" + raw
 
     target_path = Path(raw)
@@ -105,21 +116,34 @@ def moodle_open_pdf(path_or_url_or_query: str, page: int = 1) -> Dict[str, Any]:
         query_term = target_path.name.lower()
         q_clean = query_term.replace(".pdf", "")
         # Search recursively in output_dir
-        for root, _, files in os.walk(output_dir):
-            for f in files:
-                if f.lower().endswith(".pdf") and (q_clean in f.lower() or all(part in f.lower() for part in q_clean.split())):
-                    target_path = Path(root) / f
+        if output_dir.exists():
+            for root, _, files in os.walk(output_dir):
+                for f in files:
+                    if f.lower().endswith(".pdf") and (q_clean in f.lower() or all(part in f.lower() for part in q_clean.split())):
+                        target_path = Path(root) / f
+                        break
+                if target_path.exists():
                     break
-            if target_path.exists():
-                break
 
     if target_path.exists() and target_path.is_file():
-        # Open in macOS Preview
-        subprocess.run(["open", "-a", "Preview", str(target_path.resolve())])
+        resolved_file = str(target_path.resolve())
+        if sys.platform == "win32":
+            try:
+                os.startfile(resolved_file)
+                viewer_name = "default Windows viewer"
+            except Exception as ex:
+                return {"status": "error", "message": f"Failed to launch viewer: {ex}"}
+        elif sys.platform == "darwin":
+            subprocess.run(["open", "-a", "Preview", resolved_file])
+            viewer_name = "macOS Preview"
+        else:
+            subprocess.run(["xdg-open", resolved_file])
+            viewer_name = "default Linux viewer"
+
         return {
             "status": "success",
-            "message": f"Opened '{target_path.name}' in macOS Preview.",
-            "file": str(target_path.resolve()),
+            "message": f"Opened '{target_path.name}' in {viewer_name}.",
+            "file": resolved_file,
             "page": page
         }
     else:
@@ -180,6 +204,7 @@ def moodle_change_sync(target_semester: Optional[str] = None, new_output_dir: Op
 
     if not target_semester and not new_output_dir:
         # Discover available semesters to let user choose
+        from src.scraper_sync import discover_available_semesters
         sems_res = discover_available_semesters()
         return {
             "status": "needs_selection",
@@ -195,6 +220,7 @@ def moodle_change_sync(target_semester: Optional[str] = None, new_output_dir: Op
     save_env_config(user, pwd, baseurls, output_dir=out_to_save, tracked_semester=sem_to_save)
     updated_cfg = get_config()
 
+    from src.list_manager import ListManager
     list_mgr = ListManager(updated_cfg["workspace_dir"], updated_cfg["output_dir"], updated_cfg["parsed_dir"])
     list_mgr.update_list_file()
 
@@ -210,6 +236,7 @@ def sync_moodle(semester: Optional[str] = None, course_index: Optional[str] = No
     """
     [Tool: /sync] Asynchronously scrapes Moodle and registered custom URLs, converts PDFs to Markdown immediately as they download, and updates ChromaDB & BM25 indexes.
     """
+    from src.scraper_sync import sync_moodle_courses
     cfg = get_config()
     target_sem = semester if semester else cfg.get("tracked_semester", "2601")
     return sync_moodle_courses(semester_filter=target_sem, course_index=course_index)
@@ -218,12 +245,14 @@ def moodle_add_custom_url(url: str, label: Optional[str] = None, auto_sync: bool
     """
     [Tool: /moodle-add-custom-url] Registers a custom URL to scrape PDFs from and optionally triggers immediate sync & indexing.
     """
+    from src.custom_scraper import CustomUrlManager
     cfg = get_config()
     url_mgr = CustomUrlManager(cfg["workspace_dir"])
     add_res = url_mgr.add_source(url, label)
     
     if add_res.get("status") in ("added", "already_exists") and auto_sync:
-        print(f"\n[Custom URL] ⚡ Auto-syncing custom source: {url}...")
+        print(f"\n[Custom URL] Auto-syncing custom source: {url}...")
+        from src.scraper_sync import sync_moodle_courses
         sync_res = sync_moodle_courses(semester_filter="custom")
         add_res["sync_results"] = sync_res
 
@@ -233,6 +262,7 @@ def moodle_remove_custom_url(url_or_label: str, delete_files: bool = False) -> D
     """
     [Tool: /moodle-remove-custom-url] Removes a registered custom URL. Optionally cleans up downloaded files.
     """
+    from src.custom_scraper import CustomUrlManager
     cfg = get_config()
     url_mgr = CustomUrlManager(cfg["workspace_dir"])
     rem_res = url_mgr.remove_source(url_or_label)
@@ -246,6 +276,7 @@ def moodle_remove_custom_url(url_or_label: str, delete_files: bool = False) -> D
             rem_res["deleted_folder"] = str(target_folder)
 
         # Refresh list.md
+        from src.list_manager import ListManager
         list_mgr = ListManager(cfg["workspace_dir"], cfg["output_dir"], cfg["parsed_dir"])
         list_mgr.update_list_file()
         rem_res["list_file"] = str(list_mgr.list_file_path)
@@ -256,6 +287,7 @@ def moodle_list_custom_urls() -> Dict[str, Any]:
     """
     [Tool: /moodle-list-custom-urls] Lists all registered custom URLs and their sync statuses.
     """
+    from src.custom_scraper import CustomUrlManager
     cfg = get_config()
     url_mgr = CustomUrlManager(cfg["workspace_dir"])
     sources = url_mgr.get_sources()
@@ -269,6 +301,7 @@ def moodle_list(regenerate: bool = False) -> Dict[str, Any]:
     """
     [Tool: /list] Reads list.md and returns the structured document hierarchy of all courses and materials.
     """
+    from src.list_manager import ListManager
     config = get_config()
     list_mgr = ListManager(config["workspace_dir"], config["output_dir"], config["parsed_dir"])
     
@@ -296,6 +329,7 @@ def moodle_ask(query: str, doc_filter: Optional[str] = None, course_filter: Opti
     [Tool: /ask] Hybrid search across Moodle course materials with Wikipedia fallback.
     Returns the most relevant chunks with exact file & page citations.
     """
+    from src.indexer import KnowledgeIndexer
     config = get_config()
     indexer = KnowledgeIndexer(config["chroma_dir"])
     
@@ -310,7 +344,7 @@ def moodle_ask(query: str, doc_filter: Optional[str] = None, course_filter: Opti
     parsed_dir = Path(config["parsed_dir"])
     output_dir = Path(config["output_dir"])
 
-    # Ensure Preview URL handler app is registered
+    # Ensure Preview URL handler app is registered (macOS only)
     ensure_preview_app_installed()
 
     # Format retrieved Moodle context
@@ -328,14 +362,14 @@ def moodle_ask(query: str, doc_filter: Optional[str] = None, course_filter: Opti
         md_url = None
         page_num = meta.get("page", 1)
         if src_path.exists():
-            file_url = f"file://{src_path.resolve()}"
+            file_url = src_path.resolve().as_uri()
             try:
                 rel_path = src_path.relative_to(output_dir)
             except ValueError:
                 rel_path = Path(src_path.name)
             md_path = (parsed_dir / rel_path).with_suffix(".md")
             if md_path.exists():
-                md_url = f"file://{md_path.resolve()}"
+                md_url = md_path.resolve().as_uri()
 
         citation_label = f"{meta.get('course')} / {meta.get('filename')} (Page {page_num})"
         if file_url and md_url:
@@ -367,19 +401,21 @@ def moodle_ask(query: str, doc_filter: Optional[str] = None, course_filter: Opti
     # If no confident matches were found in course materials, query Wikipedia
     fallback_chunks = []
     used_fallback = False
-    if not has_confident_match:
+    if not has_confident_match and fallback_to_web:
         try:
+            from src.web_search import search_wikipedia
             print(f"[RAG Engine] Low confidence on course materials. Performing fallback search...")
-            wiki_summary = query_wikipedia(query)
-            if wiki_summary:
+            wiki_results = search_wikipedia(query)
+            if wiki_results:
                 used_fallback = True
-                fallback_chunks.append({
-                    "source_type": "wikipedia",
-                    "title": wiki_summary["title"],
-                    "url": wiki_summary["url"],
-                    "summary": wiki_summary["summary"],
-                    "citation": f"[{wiki_summary['title']}]({wiki_summary['url']})"
-                })
+                for wiki_res in wiki_results:
+                    fallback_chunks.append({
+                        "source_type": "wikipedia",
+                        "title": wiki_res["title"],
+                        "url": wiki_res["url"],
+                        "summary": wiki_res["summary"],
+                        "citation": f"[{wiki_res['title']}]({wiki_res['url']})"
+                    })
         except Exception as ex:
             print(f"[Wikipedia Fallback Error]: {ex}")
 
@@ -396,6 +432,7 @@ def moodle_quiz(course: Optional[str] = None, num_questions: int = 5) -> Dict[st
     """
     Generates practice questions grounded in course materials.
     """
+    from src.indexer import KnowledgeIndexer
     config = get_config()
     chroma_dir = config["chroma_dir"]
     parsed_dir = Path(config["parsed_dir"])
@@ -415,14 +452,14 @@ def moodle_quiz(course: Optional[str] = None, num_questions: int = 5) -> Dict[st
         md_url = None
         page_num = meta.get("page", 1)
         if src_path.exists():
-            file_url = f"file://{src_path.resolve()}"
+            file_url = src_path.resolve().as_uri()
             try:
                 rel_path = src_path.relative_to(output_dir)
             except ValueError:
                 rel_path = Path(src_path.name)
             md_path = (parsed_dir / rel_path).with_suffix(".md")
             if md_path.exists():
-                md_url = f"file://{md_path.resolve()}"
+                md_url = md_path.resolve().as_uri()
 
         citation_label = f"{meta.get('course')} / {meta.get('filename')} (Page {page_num})"
         if file_url and md_url:
@@ -609,12 +646,12 @@ if __name__ == "__main__":
         else:
             print(f"\n--- Results for: '{res['query']}' ---")
             if res.get("moodle_context"):
-                print("\n🎓 Course Materials & Custom Sources:")
+                print("\nCourse Materials & Custom Sources:")
                 for item in res["moodle_context"]:
                     print(f"\n{item['citation']}:")
                     print(item['text'][:350] + "...")
             if res.get("used_fallback"):
-                print("\n🌐 Wikipedia Fallback:")
+                print("\nWikipedia Fallback:")
                 for item in res.get("fallback_context", []):
                     print(f"\n{item['citation']}:")
                     print(item['summary'][:350] + "...")

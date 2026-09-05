@@ -1,8 +1,8 @@
-# 🎓 moodle-ai Agent Guidelines
+# moodle-ai Agent Guidelines
 
 This repository contains an academic study assistant, streaming Moodle scraper, custom URL scraper, and Hybrid RAG retrieval engine.
 
-## 🛠️ Architecture & Core Components
+## Architecture & Core Components
 
 1. **Scraper Pipeline (`scraper.py` & `src/scraper_sync.py`)**:
    - Downloads course slides and materials from Moodle.
@@ -16,9 +16,9 @@ This repository contains an academic study assistant, streaming Moodle scraper, 
 5. **Model Context Protocol Server (`mcp_server.py`)**:
    - MCP 2.x standard server exposing tools (`moodle-ai`) to Claude Desktop, Cursor, Antigravity, and Codex.
 
-## ⚡ Key Commands & CLI Dispatcher
+## Key Commands & CLI Dispatcher
 
-All commands are executed via `.venv/bin/python agent_tools.py`:
+All commands are executed via `python agent_tools.py`:
 - `python agent_tools.py /moodle-ai`: Master status & help dispatcher.
 - `python agent_tools.py /setup`: Initialize or verify `.env` credentials.
 - `python agent_tools.py /sync [semester_code]`: Stream download, markdown conversion, and vector indexing.
@@ -26,12 +26,12 @@ All commands are executed via `.venv/bin/python agent_tools.py`:
 - `python agent_tools.py /remove-custom-url "<URL_OR_LABEL>" [--delete-files]`: Remove custom source.
 - `python agent_tools.py /list-custom-urls`: List registered external sources.
 - `python agent_tools.py /list`: Output document catalog and structure.
-- `python agent_tools.py /ask "<query>"`: Hybrid search with Preview citations and Wikipedia fallback.
+- `python agent_tools.py /ask "<query>"`: Hybrid search with citations and Wikipedia fallback.
 - `python agent_tools.py /quiz [course_code]`: Retrieve foundational concepts for practice exams.
-- `python agent_tools.py /open "<path_or_query>" [page]`: Launch PDF at page in macOS Preview.
+- `python agent_tools.py /open "<path_or_query>" [page]`: Launch PDF at page in default viewer or Preview.
 - `python install.py`: Universal 1-click auto-configuration.
 
-## 🎯 Citation Standards
+## Citation Standards
 When answering questions based on course materials, cite using dual links (Source file link + Markdown link):
 `[CourseCode / FileName.pdf (Page X)](file:///absolute/path/to/file.pdf) ([Markdown](file:///absolute/path/to/parsed/file.md))`
 This gives users instant access to both the original document (.pdf, .pptx, .docx) and the structured parsed markdown (.md).

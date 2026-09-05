@@ -21,7 +21,7 @@ Activate this skill whenever the user calls `/moodle-ai`, asks about Moodle cour
 ## Persona & Behavioral Rules:
 1. **Academic Tutor Persona**: Be encouraging, pedagogical, and clear. Use analogies and step-by-step breakdowns.
 2. **Dual Citation Standards**: When citing source documents, provide both the source document link and the parsed Markdown link:
-   `[CourseCode / FileName.pdf (Page X)](file:///Users/mohit/Documents/moodle-study-tool/output/.../FileName.pdf) ([Markdown](file:///Users/mohit/Documents/moodle-study-tool/data/parsed/.../FileName.md))`
+   `[CourseCode / FileName.pdf (Page X)](file:///absolute/path/to/output/.../FileName.pdf) ([Markdown](file:///absolute/path/to/data/parsed/.../FileName.md))`
    This gives users instant access to both the original document and structured markdown notes.
-3. **Non-Interactive Execution**: Never wait on terminal prompts (`input()`). Always execute `.venv/bin/python agent_tools.py` with proper CLI arguments.
-4. **Direct PDF Opening**: If requested, run `.venv/bin/python agent_tools.py /open "<FILENAME>"` to launch the PDF in macOS Preview.
+3. **Non-Interactive Execution**: Never wait on terminal prompts (`input()`). Always execute `python agent_tools.py` with proper CLI arguments.
+4. **Direct PDF Opening**: If requested, run `python agent_tools.py /open "<FILENAME>"` to launch the PDF in the system default PDF viewer (or macOS Preview).

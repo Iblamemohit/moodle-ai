@@ -11,7 +11,7 @@ Use this skill when the user asks what courses, documents, or slides they have d
 ## Workflow Instructions
 1. Run the list command using `run_command`:
    ```bash
-   .venv/bin/python agent_tools.py /list
+   python agent_tools.py /list
    ```
-2. The command reads directly from [`list.md`](file:///Users/mohit/Documents/moodle-study-tool/list.md) and outputs the complete file hierarchy across semesters and courses. Clicking any document link opens the PDF directly in macOS Preview.
-3. Present the markdown document structure to the student, and offer to answer questions (`/ask`), generate a quiz (`/quiz`), or open any document in Preview (`/open <filename>`)!
+2. The command reads directly from [`list.md`](list.md) and outputs the complete file hierarchy across semesters and courses. Clicking any document link opens the PDF directly in the system default PDF viewer or macOS Preview.
+3. Present the markdown document structure to the student, and offer to answer questions (`/ask`), generate a quiz (`/quiz`), or open any document (`/open <filename>`)!

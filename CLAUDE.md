@@ -2,8 +2,8 @@
 
 ## Quick Start
 - Run universal setup: `python install.py` (or `./install.sh`)
-- Master command: `.venv/bin/python agent_tools.py /moodle-ai`
-- Run MCP server: `.venv/bin/python mcp_server.py`
+- Master command: `python agent_tools.py /moodle-ai`
+- Run MCP server: `python mcp_server.py`
 
 ## Commands
 - `/moodle-ai`: Master status and interactive command router.
@@ -15,7 +15,7 @@
 - `/list`: Display all courses and indexed documents from `list.md`.
 - `/ask <question>`: Hybrid search course knowledge base with slide citations.
 - `/quiz [course]`: Generate practice quiz context.
-- `/open <file_or_query> [page]`: Launch PDF in macOS Preview.
+- `/open <file_or_query> [page]`: Launch PDF in default viewer (or macOS Preview).
 - `/install`: Universal 1-click installer.
 
 ## Citations

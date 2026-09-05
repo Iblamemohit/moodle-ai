@@ -13,13 +13,13 @@ Use this skill when the user wants to change, switch, or configure which semeste
 2. If NOT specified:
    - Run:
      ```bash
-     .venv/bin/python agent_tools.py /change-sync
+     python agent_tools.py /change-sync
      ```
    - Present the list of available semesters and ask the user which semester they would like to switch to.
 3. Once the user specifies a semester:
    - Run:
      ```bash
-     .venv/bin/python agent_tools.py /change-sync "<SEMESTER_CODE>"
+     python agent_tools.py /change-sync "<SEMESTER_CODE>"
      ```
 4. Confirm to the user:
    - The active tracked semester is now configured in `.env`.

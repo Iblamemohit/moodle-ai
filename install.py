@@ -13,6 +13,16 @@ import platform
 import subprocess
 from pathlib import Path
 
+# Reconfigure console streams on Windows to prevent UnicodeEncodeError
+if sys.platform == "win32":
+    try:
+        if hasattr(sys.stdout, "reconfigure"):
+            sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+        if hasattr(sys.stderr, "reconfigure"):
+            sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
+
 WORKSPACE_DIR = Path(__file__).resolve().parent
 PYTHON_BIN = sys.executable
 
@@ -29,20 +39,20 @@ class Colors:
 
 def print_header(title: str):
     print(f"\n{Colors.BOLD}{Colors.OKCYAN}{'='*60}{Colors.ENDC}")
-    print(f"{Colors.BOLD}{Colors.OKCYAN}🚀 {title}{Colors.ENDC}")
+    print(f"{Colors.BOLD}{Colors.OKCYAN}=== {title} ==={Colors.ENDC}")
     print(f"{Colors.BOLD}{Colors.OKCYAN}{'='*60}{Colors.ENDC}\n")
 
 def print_step(step_num: int, message: str):
     print(f"{Colors.BOLD}{Colors.OKBLUE}[Step {step_num}]{Colors.ENDC} {message}")
 
 def print_success(message: str):
-    print(f"  {Colors.OKGREEN}✓ {message}{Colors.ENDC}")
+    print(f"  {Colors.OKGREEN}[OK] {message}{Colors.ENDC}")
 
 def print_warn(message: str):
-    print(f"  {Colors.WARNING}⚠ {message}{Colors.ENDC}")
+    print(f"  {Colors.WARNING}[WARN] {message}{Colors.ENDC}")
 
 def print_fail(message: str):
-    print(f"  {Colors.FAIL}✗ {message}{Colors.ENDC}")
+    print(f"  {Colors.FAIL}[FAIL] {message}{Colors.ENDC}")
 
 def get_venv_python() -> Path:
     if platform.system() == "Windows":
@@ -257,8 +267,8 @@ def step_sync_skills():
 
 def main():
     print_header("moodle-ai Universal Setup & Installer")
-    print(f"📁 Workspace: {WORKSPACE_DIR}")
-    print(f"💻 System:    {platform.system()} ({platform.machine()})\n")
+    print(f"  Workspace: {WORKSPACE_DIR}")
+    print(f"  System:    {platform.system()} ({platform.machine()})\n")
 
     step_setup_virtualenv()
     step_setup_env()
@@ -266,12 +276,12 @@ def main():
     step_setup_mcp_configs()
     step_sync_skills()
 
-    print_header("Installation & Configuration Complete! 🎉")
+    print_header("Installation & Configuration Complete!")
     print("You are ready to use moodle-ai in any environment:\n")
-    print(f"  • {Colors.BOLD}Antigravity IDE / Gemini{Colors.ENDC}: Type `/moodle-ai` in chat.")
-    print(f"  • {Colors.BOLD}Claude Desktop{Colors.ENDC}: Open Claude (MCP server 'moodle-ai' is pre-configured).")
-    print(f"  • {Colors.BOLD}Cursor / Windsurf / Codex{Colors.ENDC}: Open this folder (MCP is auto-configured).")
-    print(f"  • {Colors.BOLD}Terminal / CLI{Colors.ENDC}: Run `.venv/bin/python agent_tools.py /sync`")
+    print(f"  * {Colors.BOLD}Antigravity IDE / Gemini{Colors.ENDC}: Type `/moodle-ai` in chat.")
+    print(f"  * {Colors.BOLD}Claude Desktop{Colors.ENDC}: Open Claude (MCP server 'moodle-ai' is pre-configured).")
+    print(f"  * {Colors.BOLD}Cursor / Windsurf / Codex{Colors.ENDC}: Open this folder (MCP is auto-configured).")
+    print(f"  * {Colors.BOLD}Terminal / CLI{Colors.ENDC}: Run `python agent_tools.py /sync`")
     print("\nNext step: Open `.env` to verify your Kerberos ID & password, then run `/sync`!\n")
 
 if __name__ == "__main__":

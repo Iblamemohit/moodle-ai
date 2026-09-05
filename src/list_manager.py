@@ -38,13 +38,16 @@ class ListManager:
             current_course = None
             for line in content.splitlines():
                 line = line.strip()
-                if line.startswith("### 📖"):
-                    current_course = line.replace("### 📖", "").strip()
+                if line.startswith("### "):
+                    current_course = line.replace("### 📖", "").replace("###", "").strip()
                 elif line.startswith("| [") and "file://" in line:
                     m_path = re.search(r'file://([^)\s]+)', line)
                     m_name = re.search(r'\| \[([^\]]+)\]', line)
                     if m_path:
                         fpath = urllib.parse.unquote(m_path.group(1))
+                        # Normalize Windows drive letter in URL (e.g. /C:/path -> C:/path)
+                        if fpath.startswith("/") and len(fpath) > 2 and fpath[2] == ":":
+                            fpath = fpath[1:]
                         clean_path = os.path.abspath(fpath)
                         known["paths"].add(clean_path)
                         fname = os.path.basename(clean_path)
@@ -144,7 +147,7 @@ class ListManager:
         now_str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
         lines = [
-            "# 📚 Moodle Knowledge Base Document Index",
+            "# Moodle Knowledge Base Document Index",
             "",
             f"*Last Updated: {now_str}*",
             f"**Total Semesters:** {total_sems} | **Total Courses:** {total_courses} | **Total Files:** {total_files} | **Total Slides/Pages:** {total_pages}",
@@ -158,11 +161,11 @@ class ListManager:
             return "\n".join(lines)
 
         for sem_name, courses in structure.items():
-            lines.append(f"## 🏛️ {sem_name.replace('_', ' ')}")
+            lines.append(f"## {sem_name.replace('_', ' ')}")
             lines.append("")
 
             for course_name, files in courses.items():
-                lines.append(f"### 📖 {course_name}")
+                lines.append(f"### {course_name}")
                 if not files:
                     lines.append("*No files downloaded for this course.*")
                     lines.append("")
@@ -172,19 +175,19 @@ class ListManager:
                 lines.append("| :--- | :---: | :---: | :---: | :---: |")
 
                 for f in files:
-                    status = "✅ Parsed & Indexed" if f["is_parsed"] else "⏳ Pending Parse"
+                    status = "[DONE] Parsed & Indexed" if f["is_parsed"] else "[WAIT] Pending Parse"
                     full_src_path = (self.output_dir / f["rel_path"]).resolve()
                     full_md_path = (self.parsed_dir / f["rel_path"]).with_suffix(".md").resolve()
                     
                     if full_src_path.exists() and full_md_path.exists():
-                        file_url = f"file://{full_src_path}"
-                        md_url = f"file://{full_md_path}"
+                        file_url = full_src_path.as_uri()
+                        md_url = full_md_path.as_uri()
                         doc_display = f"[{f['name']}]({file_url}) ([Markdown]({md_url}))"
                     elif full_src_path.exists():
-                        file_url = f"file://{full_src_path}"
+                        file_url = full_src_path.as_uri()
                         doc_display = f"[{f['name']}]({file_url})"
                     elif full_md_path.exists():
-                        md_url = f"file://{full_md_path}"
+                        md_url = full_md_path.as_uri()
                         doc_display = f"[{f['name']}]({md_url})"
                     else:
                         doc_display = f"`{f['name']}`"

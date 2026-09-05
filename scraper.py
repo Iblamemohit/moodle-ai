@@ -13,23 +13,29 @@ from bs4 import BeautifulSoup
 # read config from .env
 from src.config import get_config
 
+# Reconfigure console streams on Windows
+if sys.platform == "win32":
+    try:
+        if hasattr(sys.stdout, "reconfigure"):
+            sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+        if hasattr(sys.stderr, "reconfigure"):
+            sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
+
 cfg = get_config()
 username = cfg.get("user", "")
 password = cfg.get("password", "")
 root = cfg.get("output_dir", "output")
 baseurls = cfg.get("baseurls", ["https://moodle.iitd.ac.in/", "https://moodlenew.iitd.ac.in/"])
 
-if not username or not password or username == "your_kerberos_id_here":
-    print("Error: Kerberos credentials not found in '.env'.")
-    print("Please copy '.env.sample' to '.env' and fill in your Moodle credentials:")
-    print("  cp .env.sample .env")
-    sys.exit(1)
-
-if not root.endswith('/'):
-    root += '/'
-
 sections = itertools.count()
 files = itertools.count()
+
+def sanitize_name(name: str) -> str:
+    """Sanitizes a single file or directory component without altering drive letters or full paths."""
+    cleaned = re.sub(r'[<>:"/\\|?*]', '_', str(name)).strip()
+    return cleaned or "unnamed"
 
 
 class colors:
@@ -302,11 +308,11 @@ def extract_zip(zip_path, extract_dir, on_file_saved=None):
 def saveFile(session_obj, src, path, name, on_file_saved=None):
     global files
     next(files)
-    dst = os.path.join(path, name) if not path.endswith('/') else path + name
-    dst = dst.replace(':', '-').replace('"', '')
+    safe_name = sanitize_name(name)
+    dst = os.path.join(path, safe_name)
 
     if os.path.exists(dst) and os.path.getsize(dst) > 0:
-        print('[' + colors.OKBLUE + 'skip' + colors.ENDC + '] |  |  +--%s' % name)
+        print('[' + colors.OKBLUE + 'skip' + colors.ENDC + '] |  |  +--%s' % safe_name)
         if on_file_saved:
             try:
                 on_file_saved(dst, is_new=False)
@@ -321,7 +327,7 @@ def saveFile(session_obj, src, path, name, on_file_saved=None):
     try:
         os.makedirs(os.path.dirname(dst), exist_ok=True)
         with open(dst, 'wb') as handle:
-            print('[' + colors.OKGREEN + 'save' + colors.ENDC + '] |  |  +--%s' % name)
+            print('[' + colors.OKGREEN + 'save' + colors.ENDC + '] |  |  +--%s' % safe_name)
             r = session_obj.get(src, stream=True, allow_redirects=True)
             for block in r.iter_content(65536):
                 if not block:
@@ -336,7 +342,7 @@ def saveFile(session_obj, src, path, name, on_file_saved=None):
             extract_dir = os.path.splitext(dst)[0]
             extract_zip(dst, extract_dir, on_file_saved=on_file_saved)
     except Exception as e:
-        print('[' + colors.FAIL + 'fail' + colors.ENDC + '] |  |  +--%s (%s)' % (name, e))
+        print('[' + colors.FAIL + 'fail' + colors.ENDC + '] |  |  +--%s (%s)' % (safe_name, e))
 
 
 def saveLink(session_obj, url, path, name, on_file_saved=None):
@@ -344,8 +350,8 @@ def saveLink(session_obj, url, path, name, on_file_saved=None):
     next(files)
     try:
         # Check if the HTML bookmark or target file already exists
-        fname = name.replace('/', '') + '.html'
-        dst_html = os.path.join(path, fname).replace(':', '-').replace('"', '')
+        fname = sanitize_name(name) + '.html'
+        dst_html = os.path.join(path, fname)
 
         # 1. Fetch Moodle URL wrapper page to resolve destination
         r = session_obj.get(url, allow_redirects=True)
@@ -416,7 +422,7 @@ def saveLink(session_obj, url, path, name, on_file_saved=None):
                     elif 'word' in content_type:
                         ext = '.docx'
                     dl_name = f"{name}{ext}"
-            dl_name = urllib.request.url2pathname(dl_name).replace(':', '-').replace('"', '')
+            dl_name = sanitize_name(urllib.request.url2pathname(dl_name))
             dst_doc = os.path.join(path, dl_name)
             if os.path.exists(dst_doc) and os.path.getsize(dst_doc) > 0:
                 res.close()
@@ -468,8 +474,7 @@ def saveInfo(path, info, tab, on_file_saved=None):
         global files
         next(files)
         name = 'info.txt'
-        dst = os.path.join(path, name) if not path.endswith('/') else path + name
-        dst = dst.replace(':', '-').replace('"', '')
+        dst = os.path.join(path, name)
 
         if os.path.exists(dst) and os.path.getsize(dst) > 0:
             print('[' + colors.OKBLUE + 'skip' + colors.ENDC + '] ' + tab + '+--%s' % name)
@@ -510,7 +515,7 @@ def downloadResource(session_obj, res, path, activity_name=None, course_key=None
     parsed_src = urllib.parse.urlparse(src)
     url_base = os.path.basename(parsed_src.path)
     if url_base and '.' in url_base and not url_base.endswith('.php'):
-        tentative_name = urllib.parse.unquote(url_base).replace(':', '-').replace('"', '')
+        tentative_name = sanitize_name(urllib.parse.unquote(url_base))
         tentative_dst = os.path.abspath(os.path.join(path, tentative_name))
         
         # Check against list.md catalog upfront (0 network requests, 0 disk scans)
@@ -590,7 +595,7 @@ def downloadResource(session_obj, res, path, activity_name=None, course_key=None
             else:
                 name = f"resource{ext}"
 
-        name = urllib.request.url2pathname(name).replace(':', '-').replace('"', '')
+        name = sanitize_name(urllib.request.url2pathname(name))
         dst = os.path.abspath(os.path.join(path, name))
         
         # Check if already cataloged in list.md or on disk
@@ -712,9 +717,8 @@ def downloadSection(session_obj, s, path, course_key=None, known_catalog=None, o
     if is_generic_or_date_section(raw_name):
         secpath = path
     else:
-        name = raw_name + '/'
-        secpath = os.path.join(path, name) if not path.endswith('/') else path + name
-        secpath = secpath.replace(':', '-').replace('"', '')
+        name = sanitize_name(raw_name)
+        secpath = os.path.join(path, name)
         if not os.path.exists(secpath):
             os.makedirs(secpath, exist_ok=True)
         print('       |  +--' + colors.BOLD + name + colors.ENDC)
@@ -728,7 +732,7 @@ def downloadSection(session_obj, s, path, course_key=None, known_catalog=None, o
             if '/mod/resource/' in href:
                 downloadResource(session_obj, href, secpath, activity_name=link_name, course_key=course_key, known_catalog=known_catalog, on_file_saved=on_file_saved)
             elif '/mod/folder/' in href:
-                f_name = link_name.replace('/', '-')
+                f_name = sanitize_name(link_name)
                 f_path = os.path.join(secpath, f_name)
                 os.makedirs(f_path, exist_ok=True)
                 downloadFolder(session_obj, href, f_path + '/', course_key=course_key, known_catalog=known_catalog, on_file_saved=on_file_saved)
@@ -756,7 +760,7 @@ def downloadSection(session_obj, s, path, course_key=None, known_catalog=None, o
         if any('resource' in c for c in classes) or '/mod/resource/' in href:
             downloadResource(session_obj, href, secpath, activity_name=act_name, course_key=course_key, known_catalog=known_catalog, on_file_saved=on_file_saved)
         elif any('folder' in c for c in classes) or '/mod/folder/' in href:
-            f_name = act_name.replace('/', '-') if act_name else 'Folder'
+            f_name = sanitize_name(act_name) if act_name else 'Folder'
             f_path = os.path.join(secpath, f_name)
             os.makedirs(f_path, exist_ok=True)
             downloadFolder(session_obj, href, f_path + '/', course_key=course_key, known_catalog=known_catalog, on_file_saved=on_file_saved)
@@ -770,11 +774,11 @@ def downloadSection(session_obj, s, path, course_key=None, known_catalog=None, o
         res = f.find_all(class_='fp-filename-icon')
         if res:
             label = res.pop(0).text
-            subpath = os.path.join(secpath, label.replace('/', '-'))
-            subpath = urllib.request.url2pathname(subpath).replace(':', '-').replace('"', '')
+            sub_label = sanitize_name(urllib.request.url2pathname(label))
+            subpath = os.path.join(secpath, sub_label)
             if not os.path.exists(subpath):
                 os.makedirs(subpath, exist_ok=True)
-            print('       |  +--' + colors.BOLD + label + colors.ENDC)
+            print('       |  +--' + colors.BOLD + sub_label + colors.ENDC)
             for r in res:
                 downloadResource(session_obj, r, subpath + '/', course_key=course_key, known_catalog=known_catalog, on_file_saved=on_file_saved)
 
@@ -792,12 +796,12 @@ def downloadCourse(course_item, sem_label, known_catalog=None, on_file_saved=Non
     global sections
     files = itertools.count()
     sections = itertools.count()
-    name = course_item['key'].replace('/', '-') + '/'
-    course_dir = os.path.join(root, str(sem_label).replace('/', '-'), name)
-    course_dir = urllib.request.url2pathname(course_dir).replace(':', '-').replace('"', '')
+    safe_name = sanitize_name(course_item['key'])
+    safe_sem = sanitize_name(str(sem_label))
+    course_dir = os.path.join(root, safe_sem, safe_name)
     if not os.path.exists(course_dir):
         os.makedirs(course_dir, exist_ok=True)
-    print('       +--' + colors.BOLD + name + colors.ENDC)
+    print('       +--' + colors.BOLD + safe_name + colors.ENDC)
     r = session_obj.get(course_item['url'])
     if r.status_code == 200:
         soup = BeautifulSoup(r.text, 'html.parser')
@@ -805,8 +809,8 @@ def downloadCourse(course_item, sem_label, known_catalog=None, on_file_saved=Non
         if not os.path.exists(dump_dir):
             os.makedirs(dump_dir, exist_ok=True)
 
-        dst = os.path.join(dump_dir, course_item['key'].replace('/', '-') + '-' + course_item.get('type', 'Course') + '-' + str(datetime.date.today()) + '-full.html')
-        dst = dst.replace(':', '-').replace('"', '')
+        dump_fname = sanitize_name(f"{course_item['key']}-{course_item.get('type', 'Course')}-{datetime.date.today()}-full") + ".html"
+        dst = os.path.join(dump_dir, dump_fname)
 
         with open(dst, 'w', encoding='utf-8') as f:
             f.write(str(soup))
@@ -852,12 +856,22 @@ def main():
     print(banner)
     print(colors.ENDC)
 
+    cfg = get_config()
+    uname = cfg.get("user", "")
+    pwd = cfg.get("password", "")
+    b_urls = cfg.get("baseurls", baseurls)
+    if not uname or not pwd or uname == "your_kerberos_id_here":
+        print(colors.FAIL + "Error: Kerberos credentials not found in '.env'." + colors.ENDC)
+        print("Please run setup first to configure your credentials:")
+        print("  python agent_tools.py /setup\n")
+        sys.exit(1)
+
     # logging into all configured Moodle sites
     sessions_by_url = {}
-    print(f"Logging into {len(baseurls)} Moodle site(s)...")
-    for b_url in baseurls:
+    print(f"Logging into {len(b_urls)} Moodle site(s)...")
+    for b_url in b_urls:
         print(f"  --> Connecting to {b_url} ...")
-        ses = login(b_url, username, password)
+        ses = login(b_url, uname, pwd)
         if ses:
             sessions_by_url[b_url] = ses
             print(colors.OKGREEN + f"  [OK] Logged into {b_url}" + colors.ENDC)

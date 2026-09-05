@@ -5,7 +5,7 @@ set -e
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
-echo "🎓 Launching moodle-ai Universal Setup..."
+echo "== moodle-ai Universal Setup =="
 
 # Detect available python3 binary
 if command -v python3 &>/dev/null; then
@@ -13,7 +13,7 @@ if command -v python3 &>/dev/null; then
 elif command -v python &>/dev/null; then
     PY_BIN="python"
 else
-    echo "❌ Error: Python 3 was not found on your system. Please install Python 3.10+ and re-run."
+    echo "[ERROR] Python 3 was not found on your system. Please install Python 3.10+ and re-run."
     exit 1
 fi
 

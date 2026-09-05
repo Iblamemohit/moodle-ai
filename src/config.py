@@ -1,7 +1,18 @@
 import os
+import sys
 import configparser
 from pathlib import Path
 from dotenv import load_dotenv
+
+# Reconfigure console streams on Windows to prevent UnicodeEncodeError
+if sys.platform == "win32":
+    try:
+        if hasattr(sys.stdout, "reconfigure"):
+            sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+        if hasattr(sys.stderr, "reconfigure"):
+            sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
 
 # Base workspace directory
 WORKSPACE_DIR = Path(__file__).resolve().parent.parent
@@ -11,7 +22,9 @@ ENV_PATH = WORKSPACE_DIR / ".env"
 load_dotenv(dotenv_path=ENV_PATH)
 
 def get_config():
-    """Loads configuration directly from .env."""
+    """Loads configuration directly from .env, refreshing from disk."""
+    if ENV_PATH.exists():
+        load_dotenv(dotenv_path=ENV_PATH, override=True)
     user = os.getenv("KERBEROS_USER", "")
     password = os.getenv("KERBEROS_PASSWORD", "")
     baseurls = os.getenv("MOODLE_BASEURLS", "https://moodle.iitd.ac.in/, https://moodlenew.iitd.ac.in/")

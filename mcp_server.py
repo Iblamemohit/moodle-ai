@@ -31,18 +31,18 @@ def moodle_search_and_ask(query: str, doc_filter: Optional[str] = None, course_f
     output.append(f"### Results for query: '{query}'")
     
     if res.get("has_confident_moodle_hit") and res.get("moodle_context"):
-        output.append("\n#### 🎓 Course Materials & Custom Sources:")
+        output.append("\n#### Course Materials & Custom Sources:")
         for chunk in res["moodle_context"]:
             output.append(f"\n> **Citation**: {chunk['citation']}")
             output.append(f"```markdown\n{chunk['text']}\n```")
     elif res.get("moodle_context"):
-        output.append("\n#### 🎓 Partial Hits (Low Confidence):")
+        output.append("\n#### Partial Hits (Low Confidence):")
         for chunk in res["moodle_context"]:
             output.append(f"\n> **Citation**: {chunk['citation']}")
             output.append(f"```markdown\n{chunk['text']}\n```")
 
     if res.get("used_fallback") and res.get("fallback_context"):
-        output.append("\n#### 🌐 Wikipedia Fallback:")
+        output.append("\n#### Wikipedia Fallback:")
         for w in res["fallback_context"]:
             output.append(f"\n> **Citation**: {w['citation']}")
             output.append(f"{w['summary']}")
@@ -128,7 +128,7 @@ def configure_moodle_credentials(user: Optional[str] = None, password: Optional[
 @mcp.tool()
 def open_course_pdf_in_preview(target_file_or_query: str, page: int = 1) -> str:
     """
-    Directly opens a course lecture PDF in macOS Preview app at the requested page number.
+    Directly opens a course lecture PDF in default PDF viewer (or macOS Preview) at the requested page number.
     """
     res = moodle_open_pdf(target_file_or_query, page=page)
     return json.dumps(res, indent=2)

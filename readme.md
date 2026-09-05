@@ -1,12 +1,12 @@
-# 🎓 moodle-ai
+# moodle-ai
 
 A privacy-first, offline-capable AI Study Agent, Streaming Moodle Scraper, Custom URL Scraper, and Knowledge Retrieval Engine for university course materials.
 
-It downloads course slides, external course webpages, and PDFs, converts them into structured Markdown, indexes them into a local **Hybrid Vector + Keyword Search engine (ChromaDB + BM25)**, opens lecture PDFs directly in **macOS Preview** at cited pages, and works out-of-the-box in **Antigravity**, **Claude (Desktop & Code)**, **Cursor**, **Codex / VS Code**, **Windsurf**, and the command line.
+It downloads course slides, external course webpages, and PDFs, converts them into structured Markdown, indexes them into a local **Hybrid Vector + Keyword Search engine (ChromaDB + BM25)**, opens lecture PDFs directly in your default PDF viewer (or **macOS Preview**) at cited pages, and works out-of-the-box in **Antigravity**, **Claude (Desktop & Code)**, **Cursor**, **Codex / VS Code**, **Windsurf**, and the command line.
 
 ---
 
-## ⚡ 1-Command Universal Installation
+## 1-Command Universal Installation
 
 Run one single command from inside the repository folder, and everything (virtual environment, dependencies, `.env` template, macOS Preview handler, and MCP server registrations across all your IDEs) will be automatically installed and configured:
 
@@ -23,7 +23,7 @@ python3 agent_tools.py /install
 
 ---
 
-## 🚀 Supported IDEs & Zero-Config Setup
+## Supported IDEs & Zero-Config Setup
 
 | Environment | Setup Method | What Works |
 | :--- | :--- | :--- |
@@ -36,7 +36,7 @@ python3 agent_tools.py /install
 
 ---
 
-## 🛠️ Workflows & Commands
+## Workflows & Commands
 
 ### 1. Master Command
 ```bash
@@ -67,11 +67,11 @@ Add arbitrary external URLs (course homepages, professor notes, syllabus links, 
 python agent_tools.py /add-custom-url "https://example.com/notes.pdf" "Extra_Notes"
 ```
 
-### 5. Asking Questions with Direct PDF Preview Citations
+### 5. Asking Questions with Direct PDF Citations
 ```bash
 python agent_tools.py /ask "What is total float in CPM?"
 ```
-Every citation is formatted as `[Course / File.pdf (Page X)](open-preview://...)`, which opens the exact slide in macOS Preview when clicked.
+Every citation is formatted with dual clickable links for instant access to the source file and parsed markdown notes.
 
 ### 6. Managing Custom URLs
 ```bash
@@ -89,7 +89,7 @@ python agent_tools.py /quiz "2601-CVL245A"
 
 ---
 
-## 📂 Project Architecture
+## Project Architecture
 
 ```text
 moodle-ai/

@@ -92,7 +92,7 @@ def sync_custom_sources(
             "files_downloaded": 0
         }
 
-    print(f"\n[Custom URL Sync] 🌐 Syncing {len(sources)} registered custom URL source(s)...")
+    print(f"\n[Custom URL Sync] [START] Syncing {len(sources)} registered custom URL source(s)...")
 
     results = []
     total_downloaded = 0
@@ -133,7 +133,7 @@ def sync_moodle_courses(semester_filter: Optional[str] = None, course_index: Opt
     # 1. Inspect list.md upfront
     known_catalog = list_mgr.get_known_files_from_list()
     if known_catalog["total_files"] > 0:
-        print(f"[Sync] 📋 Inspected list.md: Found {known_catalog['total_files']} files already indexed across courses.")
+        print(f"[Sync] [INFO] Inspected list.md: Found {known_catalog['total_files']} files already indexed across courses.")
 
     lock = threading.Lock()
     processed_files = set()
@@ -180,7 +180,7 @@ def sync_moodle_courses(semester_filter: Optional[str] = None, course_index: Opt
                     with lock:
                         count = indexer.index_parsed_chunks(chunks)
                         indexed_chunks_total += count
-                    print(f"  [Async RAG] ⚡ Converted & Indexed: {p.name} ({len(chunks)} pages, {count} chunks)")
+                    print(f"  [Async RAG] [DONE] Converted & Indexed: {p.name} ({len(chunks)} pages, {count} chunks)")
             except Exception as ex:
                 print(f"  [Async RAG Error] {p.name}: {ex}")
 
@@ -245,7 +245,7 @@ def sync_moodle_courses(semester_filter: Optional[str] = None, course_index: Opt
                 except ValueError:
                     pass
 
-            print(f"\n[Sync] 🚀 Starting streaming sync for {len(target_courses)} course(s) (Semester: {semester_filter})...")
+            print(f"\n[Sync] [START] Starting streaming sync for {len(target_courses)} course(s) (Semester: {semester_filter})...")
             for course_item in target_courses:
                 sem_label = f"Semester_{course_item['sem']}" if course_item.get("sem") else "General"
                 downloadCourse(course_item, sem_label, known_catalog=known_catalog, on_file_saved=on_file_saved_callback)
@@ -265,7 +265,7 @@ def sync_moodle_courses(semester_filter: Optional[str] = None, course_index: Opt
     executor.shutdown(wait=True)
 
     # Update list.md with final file structure
-    print("[Sync] 📝 Updating list.md file structure...")
+    print("[Sync] [INFO] Updating list.md file structure...")
     list_mgr.update_list_file()
 
     return {

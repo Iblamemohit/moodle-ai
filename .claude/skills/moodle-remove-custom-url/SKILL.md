@@ -13,17 +13,17 @@ Use this skill when the user wants to remove an external URL or custom source la
    - Extract the target URL or source label from the user's prompt (e.g. `CVL243_Extra` or `https://...`).
    - If unsure which URLs are registered, run:
      ```bash
-     .venv/bin/python agent_tools.py /list-custom-urls
+     python agent_tools.py /list-custom-urls
      ```
 
 2. **Execute Removal**:
    - Run:
      ```bash
-     .venv/bin/python agent_tools.py /remove-custom-url "<TARGET_URL_OR_LABEL>"
+     python agent_tools.py /remove-custom-url "<TARGET_URL_OR_LABEL>"
      ```
    - If the user explicitly asks to delete the downloaded files as well, append `--delete-files`:
      ```bash
-     .venv/bin/python agent_tools.py /remove-custom-url "<TARGET_URL_OR_LABEL>" --delete-files
+     python agent_tools.py /remove-custom-url "<TARGET_URL_OR_LABEL>" --delete-files
      ```
 
 3. **Report Status**:
