@@ -164,6 +164,61 @@ def moodle_list_custom_urls() -> Dict[str, Any]:
         "sources": sources
     }
 
+def update_moodle_ai() -> Dict[str, Any]:
+    """
+    [Tool: /update] Pulls latest code from GitHub and refreshes Python dependencies in .venv.
+    """
+    import subprocess
+    config = get_config()
+    ws = Path(config["workspace_dir"])
+
+    try:
+        git_res = subprocess.run(
+            ["git", "pull", "--ff-only"],
+            cwd=str(ws),
+            capture_output=True,
+            text=True,
+            check=True
+        )
+        git_output = git_res.stdout.strip() or "Already up to date."
+    except subprocess.CalledProcessError as e:
+        return {
+            "status": "error",
+            "message": f"Git pull failed: {e.stderr.strip() or e.stdout.strip()}",
+            "hint": "Check if you have uncommitted changes or network connectivity issues."
+        }
+    except FileNotFoundError:
+        return {
+            "status": "error",
+            "message": "Git binary not found on system."
+        }
+
+    req_file = ws / "requirements.txt"
+    pip_updated = False
+    if req_file.exists():
+        try:
+            subprocess.run(
+                [sys.executable, "-m", "pip", "install", "-q", "-r", str(req_file)],
+                cwd=str(ws),
+                capture_output=True,
+                check=True
+            )
+            pip_updated = True
+        except Exception as e:
+            return {
+                "status": "partial_success",
+                "git_output": git_output,
+                "warning": f"Code updated, but dependencies failed to install: {e}"
+            }
+
+    return {
+        "status": "success",
+        "message": "moodle-ai updated successfully.",
+        "git_output": git_output,
+        "dependencies_updated": pip_updated
+    }
+
+
 def moodle_list(regenerate: bool = False) -> Dict[str, Any]:
     """
     [Tool: /list] Reads list.md and returns the structured document hierarchy of all courses and materials.
@@ -487,6 +542,7 @@ if __name__ == "__main__":
                     "/list",
                     "/ask <query>",
                     "/quiz [course]",
+                    "/update",
                     "/install"
                 ]
             }, indent=2))
@@ -587,6 +643,11 @@ if __name__ == "__main__":
         course_name = sys.argv[2] if len(sys.argv) > 2 and not sys.argv[2].startswith("--") else None
         with CLISpinner("Generating practice quiz..."):
             res = moodle_quiz(course_name)
+        print(json.dumps(res, indent=2))
+
+    elif cmd in ("/update", "update", "/moodle-ai-update", "moodle-ai-update", "/moodle-update", "moodle-update"):
+        with CLISpinner("Updating moodle-ai..."):
+            res = update_moodle_ai()
         print(json.dumps(res, indent=2))
 
     elif cmd in ("/install", "install", "/configure", "configure"):

@@ -87,6 +87,12 @@ python agent_tools.py /remove-custom-url "Extra_Notes" --delete-files
 python agent_tools.py /quiz "2601-CVL245A"
 ```
 
+### 8. 1-Click Updates
+Pull the latest improvements and refresh virtual environment dependencies without touching your local `.env` or downloaded slides:
+```bash
+python agent_tools.py /update
+```
+
 ---
 
 ## Project Architecture
@@ -99,7 +105,7 @@ moodle-ai/
 ├── CLAUDE.md                  # Claude Code & Desktop instructions
 ├── .cursor/mcp.json           # Native Cursor MCP config
 ├── .vscode/mcp.json           # Native VS Code & Codex MCP config
-├── .agents/skills/            # 9 modular Antigravity custom skills
+├── .agents/skills/            # 10 modular Antigravity custom skills
 │   ├── moodle-ai/             # Master AI tutor skill
 │   ├── moodle-sync/           # Streaming sync skill
 │   ├── moodle-add-custom-url/ # Custom URL scraper skill
@@ -108,7 +114,8 @@ moodle-ai/
 │   ├── moodle-quiz/           # Practice quiz skill
 │   ├── moodle-list/           # Document catalog skill
 │   ├── moodle-change-sync/    # Semester switch skill
-│   └── moodle-setup/          # Secure credential setup skill
+│   ├── moodle-setup/          # Secure credential setup skill
+│   └── moodle-update/         # 1-click auto-updater skill
 ├── .claude/skills/            # Claude Code native skills
 ├── agent_tools.py             # CLI dispatcher & high-level RAG tools
 ├── mcp_server.py              # Official MCP standard server (moodle-ai)
@@ -116,8 +123,11 @@ moodle-ai/
     ├── config.py              # Environment configuration loader
     ├── custom_scraper.py      # Custom URL scraper & source manager
     ├── parser.py              # PyMuPDF4LLM Markdown parser with SHA-256 caching
-    ├── indexer.py             # ChromaDB + BM25 Hybrid Retriever with RRF
+    ├── embeddings.py          # Standalone ONNX runtime all-MiniLM-L6-v2 embeddings
+    ├── indexer.py             # SQLite + BM25 Hybrid Retriever with RRF
+    ├── visual_fallback.py     # Multimodal PDF slide diagram renderer
     ├── scraper_sync.py        # Moodle & Custom URL live indexing coordinator
     ├── list_manager.py        # Document hierarchy link indexer
     └── web_search.py          # Wikipedia REST fallback retrieval
 ```
+

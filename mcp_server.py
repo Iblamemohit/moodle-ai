@@ -10,7 +10,8 @@ from agent_tools import (
     moodle_change_sync,
     moodle_add_custom_url,
     moodle_remove_custom_url,
-    moodle_list_custom_urls
+    moodle_list_custom_urls,
+    update_moodle_ai
 )
 from src.scraper_sync import discover_available_semesters
 
@@ -131,6 +132,14 @@ def configure_moodle_credentials(user: Optional[str] = None, password: Optional[
     Configures or verifies Kerberos credentials in .env.
     """
     res = setup_moodle(user, password)
+    return json.dumps(res, indent=2)
+
+@mcp.tool()
+def update_moodle_ai_repository() -> str:
+    """
+    Pulls the latest code updates from the GitHub repository and refreshes Python dependencies in the virtual environment.
+    """
+    res = update_moodle_ai()
     return json.dumps(res, indent=2)
 
 
