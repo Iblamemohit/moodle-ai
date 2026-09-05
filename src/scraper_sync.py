@@ -13,11 +13,10 @@ from scraper import (
     colors
 )
 from src.config import get_config
-# Lazy loading parser and indexer to reduce startup time
-# from src.parser import DocumentParser, compute_file_hash
-# from src.indexer import KnowledgeIndexer
-# from src.list_manager import ListManager
-# from src.custom_scraper import CustomUrlManager, scrape_custom_source
+from src.parser import DocumentParser, compute_file_hash
+from src.indexer import KnowledgeIndexer
+from src.list_manager import ListManager
+from src.custom_scraper import CustomUrlManager, scrape_custom_source
 
 def get_moodle_sessions():
     config = get_config()
@@ -127,10 +126,6 @@ def sync_moodle_courses(semester_filter: Optional[str] = None, course_index: Opt
     parsed_dir = config["parsed_dir"]
     chroma_dir = config["chroma_dir"]
     workspace_dir = config["workspace_dir"]
-
-    from src.parser import DocumentParser, compute_file_hash
-    from src.indexer import KnowledgeIndexer
-    from src.list_manager import ListManager
 
     # Shared thread-safe instances
     parser = DocumentParser(str(output_dir), parsed_dir)
