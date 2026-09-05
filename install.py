@@ -120,7 +120,7 @@ def update_json_mcp_config(config_file: Path, server_name: str, python_path: Pat
         data["mcpServers"] = {}
 
     data["mcpServers"][server_name] = {
-        "command": str(python_path.resolve()),
+        "command": str(python_path.absolute()),
         "args": [str(script_path.resolve())]
     }
 
@@ -166,6 +166,29 @@ def step_setup_mcp_configs():
         print_success(f"Configured VS Code / Codex Workspace: {vscode_workspace.relative_to(WORKSPACE_DIR)}")
     except Exception as e:
         print_warn(f"VS Code workspace config error: {e}")
+
+    # Ensure IDE Python interpreter settings (.vscode/settings.json and pyrightconfig.json)
+    try:
+        vscode_settings = WORKSPACE_DIR / ".vscode" / "settings.json"
+        settings_data = {}
+        if vscode_settings.exists():
+            try:
+                with open(vscode_settings, "r", encoding="utf-8") as f:
+                    settings_data = json.load(f)
+            except Exception:
+                settings_data = {}
+        settings_data["python.defaultInterpreterPath"] = "${workspaceFolder}/.venv/bin/python"
+        vscode_settings.parent.mkdir(parents=True, exist_ok=True)
+        with open(vscode_settings, "w", encoding="utf-8") as f:
+            json.dump(settings_data, f, indent=2)
+
+        pyright_cfg = WORKSPACE_DIR / "pyrightconfig.json"
+        if not pyright_cfg.exists():
+            with open(pyright_cfg, "w", encoding="utf-8") as f:
+                json.dump({"venvPath": ".", "venv": ".venv"}, f, indent=2)
+        print_success("Configured IDE Python interpreter & Pyright to use .venv.")
+    except Exception as e:
+        print_warn(f"IDE settings config error: {e}")
 
     # 3. Global Cursor
     cursor_global = Path.home() / ".cursor" / "mcp.json"

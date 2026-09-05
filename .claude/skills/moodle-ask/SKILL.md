@@ -23,5 +23,6 @@ Use this skill whenever the user asks any question related to their course topic
    ```
 2. Read the JSON output:
    - `moodle_context`: Top course slide excerpts with exact page numbers and dual citations (`citation` field).
+   - `visual_fallback`: If `triggered` is True, candidate slide pages have been rendered to high-res PNG images (`rendered_pages`). Use `view_file` on `image_path` to visually inspect diagrams, charts, or figures and directly explain them to the student!
    - `fallback_context`: Wikipedia summaries if course confidence was low.
 3. Synthesize the response clearly and present it to the student with the dual citations.

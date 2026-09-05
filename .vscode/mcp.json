@@ -1,7 +1,7 @@
 {
   "mcpServers": {
     "moodle-ai": {
-      "command": "/Users/mohit/.local/share/uv/python/cpython-3.14.6-macos-aarch64-none/bin/python3.14",
+      "command": "/Users/mohit/Documents/moodle-study-tool/.venv/bin/python",
       "args": [
         "/Users/mohit/Documents/moodle-study-tool/mcp_server.py"
       ]
