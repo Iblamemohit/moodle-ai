@@ -529,7 +529,8 @@ def downloadResource(session_obj, res, path, activity_name=None, course_key=None
         
         # Check against list.md catalog upfront (0 network requests, 0 disk scans)
         if known_catalog:
-            if tentative_dst in known_catalog.get("paths", set()) or (course_key, tentative_name) in known_catalog.get("course_files", set()):
+            if (tentative_dst in known_catalog.get("paths", set()) or (course_key, tentative_name) in known_catalog.get("course_files", set())) \
+               and os.path.exists(tentative_dst) and os.path.getsize(tentative_dst) > 0:
                 print('[' + colors.OKBLUE + 'skip' + colors.ENDC + '] |  |  +--%s' % tentative_name)
                 if on_file_saved:
                     try:
@@ -608,7 +609,8 @@ def downloadResource(session_obj, res, path, activity_name=None, course_key=None
         dst = os.path.abspath(os.path.join(path, name))
         
         # Check if already cataloged in list.md or on disk
-        if known_catalog and (dst in known_catalog.get("paths", set()) or (course_key, name) in known_catalog.get("course_files", set())):
+        if known_catalog and (dst in known_catalog.get("paths", set()) or (course_key, name) in known_catalog.get("course_files", set())) \
+           and os.path.exists(dst) and os.path.getsize(dst) > 0:
             r.close()
             print('[' + colors.OKBLUE + 'skip' + colors.ENDC + '] |  |  +--%s' % name)
             if on_file_saved:
