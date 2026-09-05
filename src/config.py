@@ -31,6 +31,7 @@ def get_config():
     output_dir = os.getenv("OUTPUT_DIR", "output")
     parsed_dir = os.getenv("PARSED_DIR", "data/parsed")
     chroma_dir = os.getenv("CHROMA_DIR", "data/chroma_db")
+    db_path = os.getenv("KNOWLEDGE_DB_PATH", "data/moodle_knowledge.db")
     tracked_semester = os.getenv("TRACKED_SEMESTER", "")
 
     urls_list = [u.strip() for u in baseurls.split(",") if u.strip()]
@@ -42,6 +43,7 @@ def get_config():
         "output_dir": str((WORKSPACE_DIR / output_dir).resolve()),
         "parsed_dir": str((WORKSPACE_DIR / parsed_dir).resolve()),
         "chroma_dir": str((WORKSPACE_DIR / chroma_dir).resolve()),
+        "db_path": str((WORKSPACE_DIR / db_path).resolve()),
         "tracked_semester": tracked_semester,
         "workspace_dir": str(WORKSPACE_DIR),
         "env_path": str(ENV_PATH),

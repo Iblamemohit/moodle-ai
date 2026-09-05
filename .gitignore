@@ -26,7 +26,10 @@ data/slides/
 data/*.json
 data/*.csv
 data/*.md
+data/*.db
+*.db
 chroma_db/
+list.md
 
 # Local workspace caches
 graphify-out/

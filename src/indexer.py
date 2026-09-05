@@ -1,34 +1,42 @@
 import os
+import sqlite3
 import json
 import re
 from pathlib import Path
 from typing import List, Dict, Any, Optional
-import chromadb
-from chromadb.utils import embedding_functions
-from langchain_text_splitters import RecursiveCharacterTextSplitter
+import numpy as np
+from langchain_text_splitters import Language, RecursiveCharacterTextSplitter
 from rank_bm25 import BM25Okapi
-
-COLLECTION_NAME = "moodle_course_materials"
+from src.embeddings import MiniLMEmbeddings
 
 class KnowledgeIndexer:
-    def __init__(self, chroma_dir: str):
-        self.chroma_dir = Path(chroma_dir)
-        self.chroma_dir.mkdir(parents=True, exist_ok=True)
-        
-        # Initialize persistent ChromaDB client
-        self.client = chromadb.PersistentClient(path=str(self.chroma_dir))
-        self.embedding_fn = embedding_functions.DefaultEmbeddingFunction()
-        self.collection = self.client.get_or_create_collection(
-            name=COLLECTION_NAME,
-            embedding_function=self.embedding_fn,
-            metadata={"hnsw:space": "cosine"}
-        )
-        
-        # Text Splitter
-        self.text_splitter = RecursiveCharacterTextSplitter(
+    """
+    Lightweight Hybrid Vector + Lexical Search Indexer using SQLite, NumPy, and BM25.
+    Zero dependency on ChromaDB or client-server databases.
+    """
+
+    def __init__(self, db_path_or_dir: Optional[str] = None):
+        if db_path_or_dir:
+            p = Path(db_path_or_dir)
+            if p.suffix == ".db":
+                self.db_path = p
+            else:
+                self.db_path = p.parent / "moodle_knowledge.db"
+        else:
+            self.db_path = Path("data/moodle_knowledge.db")
+
+        self.db_path.parent.mkdir(parents=True, exist_ok=True)
+        self.conn = sqlite3.connect(str(self.db_path), check_same_thread=False)
+        self._init_db()
+
+        # Standalone ONNX MiniLM embedding generator
+        self.embedding_fn = MiniLMEmbeddings()
+
+        # Markdown-Aware Text Splitter (LangChain)
+        self.text_splitter = RecursiveCharacterTextSplitter.from_language(
+            language=Language.MARKDOWN,
             chunk_size=1000,
-            chunk_overlap=200,
-            separators=["\n## ", "\n### ", "\n#### ", "\n\n", "\n", ". ", " "]
+            chunk_overlap=200
         )
 
         # In-memory BM25 index cache
@@ -36,25 +44,98 @@ class KnowledgeIndexer:
         self.bm25_index: Optional[BM25Okapi] = None
         self._load_bm25_corpus()
 
+        # If database is empty, check if we can migrate from existing ChromaDB
+        if self.count() == 0:
+            self._try_chroma_migration()
+
+    def _init_db(self):
+        with self.conn:
+            self.conn.execute("""
+                CREATE TABLE IF NOT EXISTS chunks (
+                    id TEXT PRIMARY KEY,
+                    text TEXT NOT NULL,
+                    source TEXT NOT NULL,
+                    filename TEXT NOT NULL,
+                    course TEXT NOT NULL,
+                    semester TEXT NOT NULL,
+                    page INTEGER NOT NULL,
+                    chunk_index INTEGER NOT NULL,
+                    embedding BLOB NOT NULL
+                )
+            """)
+            self.conn.execute("CREATE INDEX IF NOT EXISTS idx_chunks_course ON chunks(course)")
+            self.conn.execute("CREATE INDEX IF NOT EXISTS idx_chunks_filename ON chunks(filename)")
+            self.conn.execute("CREATE INDEX IF NOT EXISTS idx_chunks_source ON chunks(source)")
+
+    def count(self) -> int:
+        cursor = self.conn.cursor()
+        cursor.execute("SELECT COUNT(*) FROM chunks")
+        row = cursor.fetchone()
+        return row[0] if row else 0
+
+    def _try_chroma_migration(self):
+        chroma_dir = self.db_path.parent / "chroma_db"
+        if chroma_dir.exists():
+            try:
+                import chromadb
+                client = chromadb.PersistentClient(path=str(chroma_dir))
+                coll = client.get_collection("moodle_course_materials")
+                if coll.count() > 0:
+                    print(f"[Indexer] [INFO] Migrating {coll.count()} existing chunks from ChromaDB to SQLite...")
+                    res = coll.get(include=["documents", "metadatas", "embeddings"])
+                    if res and res["ids"]:
+                        records = []
+                        for cid, text, meta, emb in zip(res["ids"], res["documents"], res["metadatas"], res["embeddings"]):
+                            emb_bytes = np.array(emb, dtype=np.float32).tobytes()
+                            records.append((
+                                cid,
+                                text,
+                                str(meta.get("source", "")),
+                                str(meta.get("filename", "")),
+                                str(meta.get("course", "")),
+                                str(meta.get("semester", "")),
+                                int(meta.get("page", 1)),
+                                int(meta.get("chunk_index", 0)),
+                                emb_bytes
+                            ))
+                        with self.conn:
+                            self.conn.executemany("""
+                                INSERT OR REPLACE INTO chunks
+                                (id, text, source, filename, course, semester, page, chunk_index, embedding)
+                                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                            """, records)
+                        print(f"[Indexer] [OK] Successfully migrated {len(records)} chunks to SQLite.")
+                        self._load_bm25_corpus()
+            except Exception as e:
+                print(f"[Indexer] [INFO] Chroma migration skipped: {e}")
+
     def _load_bm25_corpus(self):
-        """Loads all existing documents from ChromaDB into BM25 memory."""
+        """Loads all existing documents from SQLite into BM25 memory."""
         try:
-            total = self.collection.count()
-            if total == 0:
+            cursor = self.conn.cursor()
+            cursor.execute("SELECT id, text, source, filename, course, semester, page, chunk_index FROM chunks")
+            rows = cursor.fetchall()
+            if not rows:
                 self.bm25_corpus = []
                 self.bm25_index = None
                 return
 
-            # Fetch all documents in batches
-            all_docs = self.collection.get(include=["documents", "metadatas"])
             self.bm25_corpus = []
             tokenized_corpus = []
 
-            for doc_id, text, meta in zip(all_docs["ids"], all_docs["documents"], all_docs["metadatas"]):
+            for row in rows:
+                doc_id, text, source, filename, course, semester, page, chunk_index = row
                 item = {
                     "id": doc_id,
                     "text": text,
-                    "metadata": meta
+                    "metadata": {
+                        "source": source,
+                        "filename": filename,
+                        "course": course,
+                        "semester": semester,
+                        "page": page,
+                        "chunk_index": chunk_index
+                    }
                 }
                 self.bm25_corpus.append(item)
                 tokens = self._tokenize(text)
@@ -74,7 +155,7 @@ class KnowledgeIndexer:
 
     def index_parsed_chunks(self, page_chunks: List[Dict[str, Any]]) -> int:
         """
-        Splits page chunks and indexes them into ChromaDB and BM25.
+        Splits page chunks and indexes them into SQLite and BM25.
         Purges old chunks for the same source file first to avoid stale duplicates.
         """
         if not page_chunks:
@@ -85,9 +166,8 @@ class KnowledgeIndexer:
         for src in source_paths:
             self.delete_by_source(src)
 
-        documents = []
-        metadatas = []
-        ids = []
+        chunk_records = []
+        texts_to_embed = []
         count = 0
 
         for chunk in page_chunks:
@@ -100,32 +180,44 @@ class KnowledgeIndexer:
 
             for i, sub_text in enumerate(sub_chunks):
                 chunk_id = f"{meta.get('filename', 'doc')}_p{meta.get('page', 1)}_c{i}_{hash(sub_text) & 0xfffffff}"
-                
-                # Ensure all metadata values are primitive types supported by ChromaDB
-                clean_meta = {
+                chunk_records.append({
+                    "id": chunk_id,
+                    "text": sub_text,
                     "source": str(meta.get("source", "")),
                     "filename": str(meta.get("filename", "")),
                     "course": str(meta.get("course", "")),
                     "semester": str(meta.get("semester", "")),
                     "page": int(meta.get("page", 1)),
                     "chunk_index": i
-                }
-
-                documents.append(sub_text)
-                metadatas.append(clean_meta)
-                ids.append(chunk_id)
+                })
+                texts_to_embed.append(sub_text)
                 count += 1
 
-        if documents:
-            # Batch add into ChromaDB (max batch 500)
-            batch_size = 500
-            for i in range(0, len(documents), batch_size):
-                end = min(i + batch_size, len(documents))
-                self.collection.add(
-                    documents=documents[i:end],
-                    metadatas=metadatas[i:end],
-                    ids=ids[i:end]
-                )
+        if chunk_records:
+            # Batch generate embeddings via standalone ONNX model
+            embs = self.embedding_fn.embed_documents(texts_to_embed, batch_size=32)
+            
+            records_to_insert = []
+            for item, emb_vec in zip(chunk_records, embs):
+                records_to_insert.append((
+                    item["id"],
+                    item["text"],
+                    item["source"],
+                    item["filename"],
+                    item["course"],
+                    item["semester"],
+                    item["page"],
+                    item["chunk_index"],
+                    emb_vec.tobytes()
+                ))
+
+            with self.conn:
+                self.conn.executemany("""
+                    INSERT OR REPLACE INTO chunks
+                    (id, text, source, filename, course, semester, page, chunk_index, embedding)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """, records_to_insert)
+
             # Refresh BM25
             self._load_bm25_corpus()
 
@@ -134,35 +226,71 @@ class KnowledgeIndexer:
     def delete_by_source(self, source_path: str):
         """Removes all chunks belonging to a specific source file."""
         try:
-            self.collection.delete(where={"source": str(source_path)})
+            with self.conn:
+                self.conn.execute("DELETE FROM chunks WHERE source = ?", (str(source_path),))
         except Exception:
             pass
 
     def hybrid_search(self, query: str, course_filter: Optional[str] = None, filename_filter: Optional[str] = None, top_k: int = 5) -> List[Dict[str, Any]]:
         """
-        Executes an Ensemble Hybrid Search (ChromaDB Dense + BM25 Lexical)
+        Executes an Ensemble Hybrid Search (Dense Cosine Similarity + BM25 Lexical)
         combining results with Reciprocal Rank Fusion (RRF).
         """
-        if self.collection.count() == 0:
+        total_count = self.count()
+        if total_count == 0:
             return []
 
-        # 1. ChromaDB Dense Search
-        where_clause = None
-        if course_filter and filename_filter:
-            where_clause = {"$and": [{"course": course_filter}, {"filename": filename_filter}]}
-        elif course_filter:
-            where_clause = {"course": course_filter}
-        elif filename_filter:
-            where_clause = {"filename": filename_filter}
-
+        # 1. Dense Cosine Search via NumPy
+        dense_results = []
         try:
-            dense_res = self.collection.query(
-                query_texts=[query],
-                n_results=min(top_k * 3, self.collection.count()),
-                where=where_clause
-            )
+            q_vec = self.embedding_fn.embed_query(query)
+            
+            sql = "SELECT id, text, source, filename, course, semester, page, chunk_index, embedding FROM chunks"
+            params = []
+            conditions = []
+            if course_filter:
+                conditions.append("course = ?")
+                params.append(course_filter)
+            if filename_filter:
+                conditions.append("filename = ?")
+                params.append(filename_filter)
+            if conditions:
+                sql += " WHERE " + " AND ".join(conditions)
+
+            cursor = self.conn.cursor()
+            rows = cursor.execute(sql, params).fetchall()
+
+            if rows:
+                # Reconstruct candidate embeddings matrix
+                embs_raw = b"".join(r[8] for r in rows)
+                matrix = np.frombuffer(embs_raw, dtype=np.float32).reshape(len(rows), 384)
+                
+                # Dot product calculates exact cosine similarity (both are L2-normalized)
+                sims = matrix @ q_vec
+                
+                # Top dense candidates
+                limit = min(top_k * 3, len(rows))
+                top_dense_idx = np.argsort(sims)[::-1][:limit]
+
+                for rank_idx, r_idx in enumerate(top_dense_idx):
+                    row = rows[r_idx]
+                    dense_results.append({
+                        "id": row[0],
+                        "text": row[1],
+                        "metadata": {
+                            "source": row[2],
+                            "filename": row[3],
+                            "course": row[4],
+                            "semester": row[5],
+                            "page": row[6],
+                            "chunk_index": row[7]
+                        },
+                        "rank": rank_idx + 1,
+                        "cosine_similarity": float(sims[r_idx])
+                    })
         except Exception as e:
-            dense_res = {"ids": [[]], "documents": [[]], "metadatas": [[]], "distances": [[]]}
+            print(f"[Indexer Warning] Dense search failed: {e}")
+            dense_results = []
 
         # 2. BM25 Lexical Search
         bm25_scores = {}
@@ -192,19 +320,18 @@ class KnowledgeIndexer:
         RRF_K = 60
 
         # Rank Dense Results
-        if dense_res.get("ids") and dense_res["ids"][0]:
-            for rank, (d_id, text, meta, dist) in enumerate(zip(dense_res["ids"][0], dense_res["documents"][0], dense_res["metadatas"][0], dense_res["distances"][0])):
-                # Cosine distance: 0 is identical, 1 is orthogonal, 2 is opposite
-                sim = 1.0 - dist if dist is not None else 0.0
-                rrf_scores[d_id] = rrf_scores.get(d_id, 0.0) + (1.0 / (RRF_K + rank + 1))
-                doc_store[d_id] = {
-                    "id": d_id,
-                    "text": text,
-                    "metadata": meta,
-                    "dense_rank": rank + 1,
-                    "cosine_similarity": round(sim, 4),
-                    "bm25_score": 0.0
-                }
+        for item in dense_results:
+            d_id = item["id"]
+            rank = item["rank"]
+            rrf_scores[d_id] = rrf_scores.get(d_id, 0.0) + (1.0 / (RRF_K + rank))
+            doc_store[d_id] = {
+                "id": d_id,
+                "text": item["text"],
+                "metadata": item["metadata"],
+                "dense_rank": rank,
+                "cosine_similarity": round(item["cosine_similarity"], 4),
+                "bm25_score": 0.0
+            }
 
         # Rank BM25 Results
         sorted_bm25 = sorted(bm25_scores.items(), key=lambda x: x[1]["score"], reverse=True)
@@ -247,27 +374,3 @@ class KnowledgeIndexer:
             final_results.append(item)
 
         return final_results
-
-    def list_all_indexed_documents(self) -> List[Dict[str, Any]]:
-        """Returns a summary of all indexed courses and files."""
-        try:
-            all_meta = self.collection.get(include=["metadatas"])["metadatas"]
-            courses = {}
-            for m in all_meta:
-                c = m.get("course", "Unknown")
-                fn = m.get("filename", "Unknown")
-                sem = m.get("semester", "Unknown")
-                if c not in courses:
-                    courses[c] = {"semester": sem, "files": set()}
-                courses[c]["files"].add(fn)
-
-            formatted = []
-            for c, data in courses.items():
-                formatted.append({
-                    "course": c,
-                    "semester": data["semester"],
-                    "files": sorted(list(data["files"]))
-                })
-            return sorted(formatted, key=lambda x: x["course"])
-        except Exception:
-            return []
