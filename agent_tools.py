@@ -423,6 +423,38 @@ def render_pdf_to_images(pdf_query: str, target_dir: Optional[str] = None) -> Di
         "images": rendered_images
     }
 
+import threading
+import itertools
+import time
+
+class CLISpinner:
+    def __init__(self, message="Working..."):
+        self.message = message
+        self.spinner = itertools.cycle(['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'])
+        self.stop_event = threading.Event()
+        self.thread = threading.Thread(target=self.spin)
+        self.is_json = "--json" in sys.argv
+        
+    def spin(self):
+        while not self.stop_event.is_set():
+            sys.stdout.write(f"\r\033[96m{next(self.spinner)}\033[0m {self.message}")
+            sys.stdout.flush()
+            time.sleep(0.1)
+        # Clear line on exit
+        sys.stdout.write('\r' + ' ' * (len(self.message) + 4) + '\r')
+        sys.stdout.flush()
+
+    def __enter__(self):
+        # Only spin if we are not requesting json output and we are in a TTY
+        if not self.is_json and sys.stdout.isatty():
+            self.thread.start()
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        if not self.is_json and sys.stdout.isatty():
+            self.stop_event.set()
+            self.thread.join()
+
 # CLI Handler for direct terminal invocation
 if __name__ == "__main__":
     if len(sys.argv) < 2:
@@ -465,7 +497,8 @@ if __name__ == "__main__":
         pwd = sys.argv[3] if len(sys.argv) >= 4 else None
         baseurls = sys.argv[4] if len(sys.argv) > 4 else None
         out_dir = sys.argv[5] if len(sys.argv) > 5 else "output"
-        res = setup_moodle(user, pwd, baseurls=baseurls, output_dir=out_dir)
+        with CLISpinner("Setting up Moodle..."):
+            res = setup_moodle(user, pwd, baseurls=baseurls, output_dir=out_dir)
         print(json.dumps(res, indent=2))
 
     elif cmd in ("/change-sync", "change-sync", "/moodle-ai-change-sync", "moodle-ai-change-sync", "/tracked-semester", "tracked-semester"):
@@ -475,7 +508,8 @@ if __name__ == "__main__":
 
     elif cmd in ("/sync", "sync", "/moodle-ai-sync", "moodle-ai-sync", "/moodle-sync", "moodle-sync"):
         sem = sys.argv[2] if len(sys.argv) > 2 and not sys.argv[2].startswith("--") else None
-        res = sync_moodle(semester=sem)
+        with CLISpinner("Syncing course materials..."):
+            res = sync_moodle(semester=sem)
         print(json.dumps(res, indent=2))
 
     elif cmd in ("/add-custom-url", "add-custom-url", "/moodle-ai-add-custom-url", "moodle-ai-add-custom-url", "/moodle-add-custom-url", "moodle-add-custom-url", "/add-url", "add-url"):
@@ -509,7 +543,8 @@ if __name__ == "__main__":
 
     elif cmd in ("/list", "list", "/moodle-ai-list", "moodle-ai-list", "/moodle-list", "moodle-list"):
         regen = "--regen" in sys.argv or "--force" in sys.argv
-        res = moodle_list(regenerate=regen)
+        with CLISpinner("Scanning document hierarchy..."):
+            res = moodle_list(regenerate=regen)
         if "--json" in sys.argv:
             print(json.dumps(res, indent=2))
         else:
@@ -525,7 +560,8 @@ if __name__ == "__main__":
             sys.exit(0)
 
         q = " ".join(raw_args)
-        res = moodle_ask(q)
+        with CLISpinner("Searching knowledge base..."):
+            res = moodle_ask(q)
         if "--json" in sys.argv:
             print(json.dumps(res, indent=2))
         else:
@@ -549,7 +585,8 @@ if __name__ == "__main__":
 
     elif cmd in ("/quiz", "quiz", "/moodle-ai-quiz", "moodle-ai-quiz", "/moodle-quiz", "moodle-quiz"):
         course_name = sys.argv[2] if len(sys.argv) > 2 and not sys.argv[2].startswith("--") else None
-        res = moodle_quiz(course_name)
+        with CLISpinner("Generating practice quiz..."):
+            res = moodle_quiz(course_name)
         print(json.dumps(res, indent=2))
 
     elif cmd in ("/install", "install", "/configure", "configure"):
