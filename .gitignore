@@ -23,6 +23,7 @@ output/
 data/chroma_db/
 data/parsed/
 data/slides/
+data/visual_cache/
 data/*.json
 data/*.csv
 data/*.md

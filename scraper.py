@@ -8,6 +8,8 @@ import configparser
 import urllib.request
 import urllib.parse
 from requests import session
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
 from bs4 import BeautifulSoup
 
 # read config from .env
@@ -67,6 +69,13 @@ def solve_captcha(text):
 
 def login(baseurl, user, pwd):
     ses = session()
+    
+    # Configure connection pooling and retries for performance and stability
+    retries = Retry(total=3, backoff_factor=0.3, status_forcelist=[500, 502, 503, 504])
+    adapter = HTTPAdapter(pool_connections=20, pool_maxsize=20, max_retries=retries)
+    ses.mount('http://', adapter)
+    ses.mount('https://', adapter)
+    
     ses.headers.update({
         'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
     })

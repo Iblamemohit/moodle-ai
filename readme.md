@@ -2,13 +2,13 @@
 
 A privacy-first, offline-capable AI Study Agent, Streaming Moodle Scraper, Custom URL Scraper, and Knowledge Retrieval Engine for university course materials.
 
-It downloads course slides, external course webpages, and PDFs, converts them into structured Markdown, indexes them into a local **Hybrid Vector + Keyword Search engine (ChromaDB + BM25)**, opens lecture PDFs directly in your default PDF viewer (or **macOS Preview**) at cited pages, and works out-of-the-box in **Antigravity**, **Claude (Desktop & Code)**, **Cursor**, **Codex / VS Code**, **Windsurf**, and the command line.
+It downloads course slides, external course webpages, and PDFs, converts them into structured Markdown, indexes them into a local **Hybrid Vector + Keyword Search engine (ChromaDB + BM25)**, and works out-of-the-box in **Antigravity**, **Claude (Desktop & Code)**, **Cursor**, **Codex / VS Code**, **Windsurf**, and the command line.
 
 ---
 
 ## 1-Command Universal Installation
 
-Run one single command from inside the repository folder, and everything (virtual environment, dependencies, `.env` template, macOS Preview handler, and MCP server registrations across all your IDEs) will be automatically installed and configured:
+Run one single command from inside the repository folder, and everything (virtual environment, dependencies, `.env` template, and MCP server registrations across all your IDEs) will be automatically installed and configured:
 
 ```bash
 # Option A: Python Installer
@@ -110,7 +110,7 @@ moodle-ai/
 │   ├── moodle-change-sync/    # Semester switch skill
 │   └── moodle-setup/          # Secure credential setup skill
 ├── .claude/skills/            # Claude Code native skills
-├── agent_tools.py             # CLI dispatcher & high-level RAG / Preview tools
+├── agent_tools.py             # CLI dispatcher & high-level RAG tools
 ├── mcp_server.py              # Official MCP standard server (moodle-ai)
 └── src/
     ├── config.py              # Environment configuration loader
@@ -118,6 +118,6 @@ moodle-ai/
     ├── parser.py              # PyMuPDF4LLM Markdown parser with SHA-256 caching
     ├── indexer.py             # ChromaDB + BM25 Hybrid Retriever with RRF
     ├── scraper_sync.py        # Moodle & Custom URL live indexing coordinator
-    ├── list_manager.py        # Document hierarchy & Preview link indexer
+    ├── list_manager.py        # Document hierarchy link indexer
     └── web_search.py          # Wikipedia REST fallback retrieval
 ```

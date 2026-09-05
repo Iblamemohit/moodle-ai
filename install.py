@@ -106,56 +106,6 @@ def step_setup_env():
     else:
         print_success(".env file is present.")
 
-def step_setup_preview_handler():
-    if platform.system() != "Darwin":
-        return
-
-    print_step(3, "Configuring native macOS Preview URL Scheme Handler (open-preview://)...")
-    try:
-        import plistlib
-        app_path = os.path.expanduser("~/Applications/OpenInPreview.app")
-        plist_path = os.path.join(app_path, "Contents/Info.plist")
-        
-        if os.path.exists(plist_path):
-            print_success("OpenInPreview.app URL handler is already installed.")
-            return
-
-        os.makedirs(os.path.expanduser("~/Applications"), exist_ok=True)
-        shutil.rmtree(app_path, ignore_errors=True)
-
-        tools_script = WORKSPACE_DIR / "agent_tools.py"
-        python_bin = get_venv_python()
-
-        applescript_src = f"""
-on open location this_URL
-    do shell script "{python_bin} {tools_script} /open-url " & quoted form of this_URL
-end open location
-"""
-        temp_applescript = "/tmp/open_preview.applescript"
-        with open(temp_applescript, "w", encoding="utf-8") as f:
-            f.write(applescript_src)
-
-        subprocess.run(["osacompile", "-o", app_path, temp_applescript], check=True, capture_output=True)
-
-        with open(plist_path, "rb") as f:
-            plist_data = plistlib.load(f)
-
-        plist_data["CFBundleURLTypes"] = [
-            {
-                "CFBundleURLName": "Open In Preview URL Handler",
-                "CFBundleURLSchemes": ["open-preview", "preview-pdf"]
-            }
-        ]
-        plist_data["LSBackgroundOnly"] = True
-
-        with open(plist_path, "wb") as f:
-            plistlib.dump(plist_data, f)
-
-        subprocess.run(["/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister", "-f", app_path], check=True, capture_output=True)
-        print_success("Registered OpenInPreview.app URL handler in ~/Applications/.")
-    except Exception as e:
-        print_warn(f"Preview handler registration note: {e}")
-
 def update_json_mcp_config(config_file: Path, server_name: str, python_path: Path, script_path: Path):
     config_file.parent.mkdir(parents=True, exist_ok=True)
     data = {}
@@ -272,7 +222,6 @@ def main():
 
     step_setup_virtualenv()
     step_setup_env()
-    step_setup_preview_handler()
     step_setup_mcp_configs()
     step_sync_skills()
 

@@ -15,7 +15,7 @@
 - `/list`: Display all courses and indexed documents from `list.md`.
 - `/ask <question>`: Hybrid search course knowledge base with slide citations.
 - `/quiz [course]`: Generate practice quiz context.
-- `/open <file_or_query> [page]`: Launch PDF in default viewer (or macOS Preview).
+
 - `/install`: Universal 1-click installer.
 
 ## Citations

@@ -19,139 +19,6 @@ if sys.platform == "win32":
 
 from src.config import get_config, save_env_config, init_env_template
 
-def ensure_preview_app_installed() -> bool:
-    """
-    Ensures that the native macOS OpenInPreview.app URL handler is installed
-    in ~/Applications/OpenInPreview.app and registered with LaunchServices to handle
-    'open-preview://' and 'preview-pdf://' schemes. Returns False on non-macOS platforms.
-    """
-    if sys.platform != "darwin":
-        return False
-    try:
-        import plistlib
-        app_path = os.path.expanduser("~/Applications/OpenInPreview.app")
-        plist_path = os.path.join(app_path, "Contents/Info.plist")
-        
-        if os.path.exists(plist_path):
-            return True
-            
-        os.makedirs(os.path.expanduser("~/Applications"), exist_ok=True)
-        shutil.rmtree(app_path, ignore_errors=True)
-        
-        tools_script = os.path.abspath(__file__)
-        python_bin = sys.executable
-        
-        applescript_src = f"""
-on open location this_URL
-    do shell script "{python_bin} {tools_script} /open-url " & quoted form of this_URL
-end open location
-"""
-        temp_applescript = "/tmp/open_preview.applescript"
-        with open(temp_applescript, "w", encoding="utf-8") as f:
-            f.write(applescript_src)
-
-        subprocess.run(["osacompile", "-o", app_path, temp_applescript], check=True, capture_output=True)
-
-        with open(plist_path, "rb") as f:
-            plist_data = plistlib.load(f)
-
-        plist_data["CFBundleURLTypes"] = [
-            {
-                "CFBundleURLName": "Open In Preview URL Handler",
-                "CFBundleURLSchemes": ["open-preview", "preview-pdf"]
-            }
-        ]
-        plist_data["LSBackgroundOnly"] = True
-
-        with open(plist_path, "wb") as f:
-            plistlib.dump(plist_data, f)
-
-        subprocess.run(["/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister", "-f", app_path], check=True, capture_output=True)
-        return True
-    except Exception:
-        return False
-
-def moodle_open_pdf(path_or_url_or_query: str, page: int = 1) -> Dict[str, Any]:
-    """
-    [Tool: /open] Resolves a PDF file path or search query and launches it in the system viewer.
-    """
-    config = get_config()
-    output_dir = Path(config["output_dir"])
-    
-    raw = path_or_url_or_query.strip()
-    # Strip URL schemes if present
-    for scheme in ("open-preview://", "preview-pdf://", "file://"):
-        if raw.startswith(scheme):
-            raw = raw[len(scheme):]
-            break
-
-    raw = urllib.parse.unquote(raw)
-
-    if "#page=" in raw:
-        parts = raw.split("#page=")
-        raw = parts[0]
-        try:
-            page = int(parts[1])
-        except Exception:
-            pass
-    elif "?page=" in raw:
-        parts = raw.split("?page=")
-        raw = parts[0]
-        try:
-            page = int(parts[1])
-        except Exception:
-            pass
-
-    if raw.startswith("localhost/"):
-        raw = raw[len("localhost/"):]
-
-    # On Windows, normalize leading slashes before drive letters (e.g. /C:/path -> C:/path)
-    if raw.startswith("/") and len(raw) > 2 and raw[2] == ":":
-        raw = raw[1:]
-    elif not raw.startswith("/") and os.path.exists("/" + raw):
-        raw = "/" + raw
-
-    target_path = Path(raw)
-    if not target_path.exists():
-        query_term = target_path.name.lower()
-        q_clean = query_term.replace(".pdf", "")
-        # Search recursively in output_dir
-        if output_dir.exists():
-            for root, _, files in os.walk(output_dir):
-                for f in files:
-                    if f.lower().endswith(".pdf") and (q_clean in f.lower() or all(part in f.lower() for part in q_clean.split())):
-                        target_path = Path(root) / f
-                        break
-                if target_path.exists():
-                    break
-
-    if target_path.exists() and target_path.is_file():
-        resolved_file = str(target_path.resolve())
-        if sys.platform == "win32":
-            try:
-                os.startfile(resolved_file)
-                viewer_name = "default Windows viewer"
-            except Exception as ex:
-                return {"status": "error", "message": f"Failed to launch viewer: {ex}"}
-        elif sys.platform == "darwin":
-            subprocess.run(["open", "-a", "Preview", resolved_file])
-            viewer_name = "macOS Preview"
-        else:
-            subprocess.run(["xdg-open", resolved_file])
-            viewer_name = "default Linux viewer"
-
-        return {
-            "status": "success",
-            "message": f"Opened '{target_path.name}' in {viewer_name}.",
-            "file": resolved_file,
-            "page": page
-        }
-    else:
-        return {
-            "status": "error",
-            "message": f"Could not find PDF matching '{path_or_url_or_query}' in {output_dir}"
-        }
-
 def setup_moodle(user: Optional[str] = None, password: Optional[str] = None, baseurls: Optional[str] = None, output_dir: str = "output") -> Dict[str, Any]:
     """
     [Tool: /setup] Generates or verifies the local .env configuration file securely.
@@ -324,14 +191,24 @@ def moodle_list(regenerate: bool = False) -> Dict[str, Any]:
         "structure": docs_structure
     }
 
+_GLOBAL_INDEXER = None
+
+def _get_indexer():
+    """Lazily loads and caches the KnowledgeIndexer instance for reuse across MCP queries."""
+    global _GLOBAL_INDEXER
+    if _GLOBAL_INDEXER is None:
+        from src.indexer import KnowledgeIndexer
+        config = get_config()
+        _GLOBAL_INDEXER = KnowledgeIndexer(config["chroma_dir"])
+    return _GLOBAL_INDEXER
+
 def moodle_ask(query: str, doc_filter: Optional[str] = None, course_filter: Optional[str] = None, top_k: int = 4, fallback_to_web: bool = True) -> Dict[str, Any]:
     """
     [Tool: /ask] Hybrid search across Moodle course materials with Wikipedia fallback.
     Returns the most relevant chunks with exact file & page citations.
     """
-    from src.indexer import KnowledgeIndexer
+    indexer = _get_indexer()
     config = get_config()
-    indexer = KnowledgeIndexer(config["chroma_dir"])
     
     # 1. Perform Hybrid Search
     results = indexer.hybrid_search(
@@ -343,9 +220,6 @@ def moodle_ask(query: str, doc_filter: Optional[str] = None, course_filter: Opti
 
     parsed_dir = Path(config["parsed_dir"])
     output_dir = Path(config["output_dir"])
-
-    # Ensure Preview URL handler app is registered (macOS only)
-    ensure_preview_app_installed()
 
     # Format retrieved Moodle context
     retrieved_chunks = []
@@ -397,7 +271,20 @@ def moodle_ask(query: str, doc_filter: Optional[str] = None, course_filter: Opti
             "citation": citation
         })
 
-    # 2. Check if Fallback is needed
+    # 2. Check for Page-Level Visual Fallback
+    visual_fallback = {
+        "triggered": False,
+        "visual_intent_detected": False,
+        "reason": "none",
+        "rendered_pages": []
+    }
+    try:
+        from src.visual_fallback import process_visual_fallback
+        visual_fallback = process_visual_fallback(query, retrieved_chunks)
+    except Exception as v_ex:
+        print(f"[Visual Fallback Error]: {v_ex}")
+
+    # 3. Check if Fallback is needed
     # If no confident matches were found in course materials, query Wikipedia
     fallback_chunks = []
     used_fallback = False
@@ -423,6 +310,7 @@ def moodle_ask(query: str, doc_filter: Optional[str] = None, course_filter: Opti
         "query": query,
         "has_confident_moodle_hit": has_confident_match,
         "used_fallback": used_fallback,
+        "visual_fallback": visual_fallback,
         "moodle_context": retrieved_chunks,
         "fallback_context": fallback_chunks
     }
@@ -432,13 +320,11 @@ def moodle_quiz(course: Optional[str] = None, num_questions: int = 5) -> Dict[st
     """
     Generates practice questions grounded in course materials.
     """
-    from src.indexer import KnowledgeIndexer
     config = get_config()
-    chroma_dir = config["chroma_dir"]
     parsed_dir = Path(config["parsed_dir"])
     output_dir = Path(config["output_dir"])
 
-    indexer = KnowledgeIndexer(chroma_dir)
+    indexer = _get_indexer()
     
     # Query broad foundational concepts for the course
     query = "introduction definitions key principles formulas summary concepts"
@@ -542,7 +428,7 @@ if __name__ == "__main__":
     if len(sys.argv) < 2:
         print(json.dumps({
             "status": "error",
-            "message": "Missing command. Usage: python agent_tools.py </setup | /sync | /list | /ask | /quiz | /open | /change-sync | /add-custom-url | /remove-custom-url | /list-custom-urls> [args...]"
+            "message": "Missing command. Usage: python agent_tools.py </setup | /sync | /list | /ask | /quiz | /change-sync | /add-custom-url | /remove-custom-url | /list-custom-urls> [args...]"
         }, indent=2))
         sys.exit(0)
 
@@ -569,7 +455,6 @@ if __name__ == "__main__":
                     "/list",
                     "/ask <query>",
                     "/quiz [course]",
-                    "/open <path_or_query> [page]",
                     "/install"
                 ]
             }, indent=2))
@@ -650,6 +535,12 @@ if __name__ == "__main__":
                 for item in res["moodle_context"]:
                     print(f"\n{item['citation']}:")
                     print(item['text'][:350] + "...")
+            if res.get("visual_fallback", {}).get("triggered"):
+                print("\n📸 Page-Level Visual Fallback (Rendered Slide Images):")
+                for vp in res["visual_fallback"].get("rendered_pages", []):
+                    print(f"  - Slide p.{vp['page']} from {vp['filename']}")
+                    print(f"    Image: {vp['image_path']}")
+                    print(f"    Link:  [{vp['filename']} (Page {vp['page']})]({vp['image_url']})")
             if res.get("used_fallback"):
                 print("\nWikipedia Fallback:")
                 for item in res.get("fallback_context", []):
@@ -659,27 +550,6 @@ if __name__ == "__main__":
     elif cmd in ("/quiz", "quiz", "/moodle-ai-quiz", "moodle-ai-quiz", "/moodle-quiz", "moodle-quiz"):
         course_name = sys.argv[2] if len(sys.argv) > 2 and not sys.argv[2].startswith("--") else None
         res = moodle_quiz(course_name)
-        print(json.dumps(res, indent=2))
-
-    elif cmd in ("/open", "open", "/preview", "preview"):
-        target = " ".join([a for a in sys.argv[2:] if not a.startswith("--")]) if len(sys.argv) > 2 else ""
-        if not target:
-            print(json.dumps({
-                "status": "error",
-                "message": "Missing target file or search query. Usage: python agent_tools.py /open \"<filename or topic>\" [page]"
-            }, indent=2))
-            sys.exit(0)
-        page_arg = 1
-        for arg in sys.argv[2:]:
-            if arg.isdigit():
-                page_arg = int(arg)
-                break
-        res = moodle_open_pdf(target, page=page_arg)
-        print(json.dumps(res, indent=2))
-
-    elif cmd in ("/open-url", "open-url"):
-        url = sys.argv[2] if len(sys.argv) > 2 else ""
-        res = moodle_open_pdf(url)
         print(json.dumps(res, indent=2))
 
     elif cmd in ("/install", "install", "/configure", "configure"):

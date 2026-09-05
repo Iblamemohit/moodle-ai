@@ -8,7 +8,6 @@ from agent_tools import (
     moodle_ask,
     moodle_quiz,
     moodle_change_sync,
-    moodle_open_pdf,
     moodle_add_custom_url,
     moodle_remove_custom_url,
     moodle_list_custom_urls
@@ -40,6 +39,15 @@ def moodle_search_and_ask(query: str, doc_filter: Optional[str] = None, course_f
         for chunk in res["moodle_context"]:
             output.append(f"\n> **Citation**: {chunk['citation']}")
             output.append(f"```markdown\n{chunk['text']}\n```")
+
+    if res.get("visual_fallback", {}).get("triggered") and res["visual_fallback"].get("rendered_pages"):
+        output.append("\n#### Visual Slide Fallback (Rendered Page Images):")
+        output.append("> **Note for Multimodal AI Agent**: Visual intent was detected or candidate slides contain diagrams/drawings. Inspect the rendered image(s) using your vision capabilities (e.g. `view_file`) to interpret charts, diagrams, and visual layouts for the user.")
+        for vp in res["visual_fallback"]["rendered_pages"]:
+            output.append(f"\n- **Slide p.{vp['page']}** ({vp['filename']}):")
+            output.append(f"  - **Image File**: `{vp['image_path']}`")
+            output.append(f"  - **Preview Link**: [{vp['filename']} (p.{vp['page']})]({vp['image_url']})")
+            output.append(f"  - **Citation**: {vp['citation']}")
 
     if res.get("used_fallback") and res.get("fallback_context"):
         output.append("\n#### Wikipedia Fallback:")
@@ -125,13 +133,7 @@ def configure_moodle_credentials(user: Optional[str] = None, password: Optional[
     res = setup_moodle(user, password)
     return json.dumps(res, indent=2)
 
-@mcp.tool()
-def open_course_pdf_in_preview(target_file_or_query: str, page: int = 1) -> str:
-    """
-    Directly opens a course lecture PDF in default PDF viewer (or macOS Preview) at the requested page number.
-    """
-    res = moodle_open_pdf(target_file_or_query, page=page)
-    return json.dumps(res, indent=2)
+
 
 if __name__ == "__main__":
     mcp.run()
