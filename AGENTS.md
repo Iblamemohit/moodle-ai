@@ -12,7 +12,7 @@ This repository contains an academic study assistant, streaming Moodle scraper, 
 3. **Hybrid RAG Engine (`src/indexer.py`)**:
    - Dense retrieval (SQLite + ONNX `all-MiniLM-L6-v2`) + Lexical retrieval (BM25) with Reciprocal Rank Fusion (RRF).
 4. **Tools & CLI (`agent_tools.py`)**:
-   - Entry point for `/moodle-ai`, `/setup`, `/sync`, `/list`, `/ask`, `/quiz`, `/add-custom-url`, `/remove-custom-url`, `/list-custom-urls`, `/update`, `/install`.
+   - Entry point for `/moodle-ai`, `/setup`, `/sync`, `/list`, `/ask`, `/quiz`, `/add-custom-url`, `/remove-custom-url`, `/list-custom-urls`, `/update-version`, `/install`.
 5. **Model Context Protocol Server (`mcp_server.py`)**:
    - MCP 2.x standard server exposing tools (`moodle-ai`) to Claude Desktop, Cursor, Antigravity, and Codex.
 6. **Page-Level Visual Fallback (`src/visual_fallback.py`)**:
@@ -38,7 +38,7 @@ All commands are executed via `python agent_tools.py`:
 - `python agent_tools.py /list [--regen]`: Output document catalog and structure.
 - `python agent_tools.py /ask "<query>"`: Hybrid search with citations and Wikipedia fallback.
 - `python agent_tools.py /quiz [course_code]`: Retrieve foundational concepts for practice exams.
-- `python agent_tools.py /update`: Pull latest updates from GitHub and refresh `.venv` dependencies.
+- `python agent_tools.py /update-version`: Pull latest updates from GitHub and refresh `.venv` dependencies.
 - `python install.py`: Universal 1-click auto-configuration.
 
 ## Citation Standards

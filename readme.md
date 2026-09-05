@@ -90,7 +90,7 @@ python agent_tools.py /quiz "2601-CVL245A"
 ### 8. 1-Click Updates
 Pull the latest improvements and refresh virtual environment dependencies without touching your local `.env` or downloaded slides:
 ```bash
-python agent_tools.py /update
+python agent_tools.py /update-version
 ```
 
 ---
@@ -115,7 +115,7 @@ moodle-ai/
 │   ├── moodle-list/           # Document catalog skill
 │   ├── moodle-change-sync/    # Semester switch skill
 │   ├── moodle-setup/          # Secure credential setup skill
-│   └── moodle-update/         # 1-click auto-updater skill
+│   └── moodle-update-version/ # 1-click auto-updater skill
 ├── .claude/skills/            # Claude Code native skills
 ├── agent_tools.py             # CLI dispatcher & high-level RAG tools
 ├── mcp_server.py              # Official MCP standard server (moodle-ai)

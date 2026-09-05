@@ -1,9 +1,9 @@
 ---
-name: moodle-update
+name: moodle-update-version
 description: Pulls the latest code updates from GitHub and refreshes Python dependencies in the virtual environment.
 ---
 
-# Moodle Update Skill
+# Moodle Update Version Skill
 
 ## When to use this skill
 Use this skill whenever the user asks to update `moodle-ai`, pull the latest features/bug fixes from GitHub, or sync repository code updates.
@@ -11,7 +11,7 @@ Use this skill whenever the user asks to update `moodle-ai`, pull the latest fea
 ## Workflow Instructions
 1. Run the update tool via `run_command`:
    ```bash
-   python agent_tools.py /update --json
+   python agent_tools.py /update-version --json
    ```
 2. Read the JSON output:
    - `status`: `"success"`, `"partial_success"`, or `"error"`.

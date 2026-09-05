@@ -542,7 +542,7 @@ if __name__ == "__main__":
                     "/list",
                     "/ask <query>",
                     "/quiz [course]",
-                    "/update",
+                    "/update-version",
                     "/install"
                 ]
             }, indent=2))
@@ -645,8 +645,8 @@ if __name__ == "__main__":
             res = moodle_quiz(course_name)
         print(json.dumps(res, indent=2))
 
-    elif cmd in ("/update", "update", "/moodle-ai-update", "moodle-ai-update", "/moodle-update", "moodle-update"):
-        with CLISpinner("Updating moodle-ai..."):
+    elif cmd in ("/update-version", "update-version", "/update", "update", "/moodle-ai-update-version", "/moodle-ai-update", "/moodle-update"):
+        with CLISpinner("Updating moodle-ai version..."):
             res = update_moodle_ai()
         print(json.dumps(res, indent=2))
 
@@ -657,6 +657,6 @@ if __name__ == "__main__":
     else:
         print(json.dumps({
             "status": "error",
-            "message": f"Unknown command '{cmd}'. Available commands: /moodle-ai, /setup, /sync, /list, /ask, /quiz, /open, /change-sync, /add-custom-url, /remove-custom-url, /list-custom-urls, /install"
+            "message": f"Unknown command '{cmd}'. Available commands: /moodle-ai, /setup, /sync, /list, /ask, /quiz, /open, /change-sync, /add-custom-url, /remove-custom-url, /list-custom-urls, /update-version, /install"
         }, indent=2))
 

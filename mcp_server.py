@@ -135,7 +135,7 @@ def configure_moodle_credentials(user: Optional[str] = None, password: Optional[
     return json.dumps(res, indent=2)
 
 @mcp.tool()
-def update_moodle_ai_repository() -> str:
+def update_moodle_ai_version() -> str:
     """
     Pulls the latest code updates from the GitHub repository and refreshes Python dependencies in the virtual environment.
     """
