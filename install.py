@@ -83,12 +83,12 @@ def step_setup_virtualenv():
 def step_setup_env():
     print_step(2, "Checking Configuration (.env)...")
     env_file = WORKSPACE_DIR / ".env"
-    sample_file = WORKSPACE_DIR / ".env.sample"
+    sample_file = WORKSPACE_DIR / ".env.sample" if (WORKSPACE_DIR / ".env.sample").exists() else WORKSPACE_DIR / "env.sample"
 
     if not env_file.exists():
         if sample_file.exists():
             shutil.copy(sample_file, env_file)
-            print_success("Created .env from .env.sample template.")
+            print_success(f"Created .env from {sample_file.name} template.")
         else:
             with open(env_file, "w", encoding="utf-8") as f:
                 f.write(
