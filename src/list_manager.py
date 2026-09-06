@@ -7,10 +7,11 @@ from typing import Dict, Any, List, Optional
 import pymupdf
 
 class ListManager:
-    def __init__(self, workspace_dir: str, output_dir: str, parsed_dir: str, list_file: str = "list.md"):
+    def __init__(self, workspace_dir: str, output_dir: str, parsed_dir: str, list_file: str = "list.md", user_files_dir: Optional[str] = None):
         self.workspace_dir = Path(workspace_dir)
         self.output_dir = Path(output_dir)
         self.parsed_dir = Path(parsed_dir)
+        self.user_files_dir = Path(user_files_dir).resolve() if user_files_dir else (self.workspace_dir / "user_files").resolve()
         self.list_file_path = self.workspace_dir / list_file
 
     def get_known_files_from_list(self) -> Dict[str, Any]:
@@ -85,13 +86,24 @@ class ListManager:
             except Exception:
                 pages = 1
 
-        rel_from_output = file_path.relative_to(self.output_dir)
-        parsed_md = self.parsed_dir / rel_from_output.with_suffix(".md")
+        if self.user_files_dir and (file_path == self.user_files_dir or self.user_files_dir in file_path.parents):
+            sub_rel = file_path.relative_to(self.user_files_dir)
+            rel_from_base = Path("User_Files") / sub_rel
+            parsed_md = self.parsed_dir / rel_from_base.with_suffix(".md")
+        else:
+            try:
+                rel_from_base = file_path.relative_to(self.output_dir)
+            except ValueError:
+                rel_from_base = Path(file_path.name)
+            parsed_md = self.parsed_dir / rel_from_base.with_suffix(".md")
+
         is_parsed = parsed_md.exists()
 
         return {
             "name": file_path.name,
-            "rel_path": str(rel_from_output),
+            "rel_path": str(rel_from_base),
+            "full_path": str(file_path.resolve()),
+            "parsed_md_path": str(parsed_md.resolve()),
             "size": size_str,
             "bytes": size_bytes,
             "pages": pages,
@@ -102,34 +114,59 @@ class ListManager:
 
     def scan_all_documents(self) -> Dict[str, Dict[str, List[Dict[str, Any]]]]:
         """
-        Scans output_dir and groups files by Semester -> Course.
+        Scans output_dir and user_files_dir, grouping files by Semester/Category -> Course.
         """
         structure: Dict[str, Dict[str, List[Dict[str, Any]]]] = {}
 
-        if not self.output_dir.exists():
-            return structure
-
-        for sem_dir in sorted(self.output_dir.iterdir()):
-            if not sem_dir.is_dir() or sem_dir.name.startswith("."):
-                continue
-            sem_name = sem_dir.name
-            structure[sem_name] = {}
-
-            for course_dir in sorted(sem_dir.iterdir()):
-                if not course_dir.is_dir() or course_dir.name.startswith("."):
+        if self.output_dir.exists():
+            for sem_dir in sorted(self.output_dir.iterdir()):
+                if not sem_dir.is_dir() or sem_dir.name.startswith("."):
                     continue
-                course_name = course_dir.name
-                structure[sem_name][course_name] = []
+                sem_name = sem_dir.name
+                structure[sem_name] = {}
 
-                for root, _, files in os.walk(course_dir):
-                    if ".dump" in root:
+                for course_dir in sorted(sem_dir.iterdir()):
+                    if not course_dir.is_dir() or course_dir.name.startswith("."):
                         continue
-                    for f in sorted(files):
-                        if f.startswith("."):
+                    course_name = course_dir.name
+                    structure[sem_name][course_name] = []
+
+                    for root, _, files in os.walk(course_dir):
+                        if ".dump" in root:
                             continue
-                        f_path = Path(root) / f
-                        stats = self.get_file_stats(f_path)
-                        structure[sem_name][course_name].append(stats)
+                        for f in sorted(files):
+                            if f.startswith("."):
+                                continue
+                            f_path = Path(root) / f
+                            stats = self.get_file_stats(f_path)
+                            structure[sem_name][course_name].append(stats)
+
+        # Also scan user_files_dir
+        if self.user_files_dir and self.user_files_dir.exists():
+            user_structure: Dict[str, List[Dict[str, Any]]] = {}
+            for item in sorted(self.user_files_dir.iterdir()):
+                if item.name.startswith(".") or item.name.lower() in ("readme.md", ".gitkeep"):
+                    continue
+                if item.is_file():
+                    if "General" not in user_structure:
+                        user_structure["General"] = []
+                    stats = self.get_file_stats(item)
+                    user_structure["General"].append(stats)
+                elif item.is_dir():
+                    course_name = item.name
+                    user_structure[course_name] = []
+                    for root, _, files in os.walk(item):
+                        if ".dump" in root:
+                            continue
+                        for f in sorted(files):
+                            if f.startswith(".") or f.lower() in ("readme.md", ".gitkeep"):
+                                continue
+                            f_path = Path(root) / f
+                            stats = self.get_file_stats(f_path)
+                            user_structure[course_name].append(stats)
+
+            if user_structure:
+                structure["User_Files"] = user_structure
 
         return structure
 
@@ -161,13 +198,14 @@ class ListManager:
             return "\n".join(lines)
 
         for sem_name, courses in structure.items():
-            lines.append(f"## {sem_name.replace('_', ' ')}")
+            display_sem = "User Files (Personal / Uploaded)" if sem_name == "User_Files" else sem_name.replace('_', ' ')
+            lines.append(f"## {display_sem}")
             lines.append("")
 
             for course_name, files in courses.items():
                 lines.append(f"### {course_name}")
                 if not files:
-                    lines.append("*No files downloaded for this course.*")
+                    lines.append("*No files downloaded for this section.*")
                     lines.append("")
                     continue
 
@@ -176,8 +214,8 @@ class ListManager:
 
                 for f in files:
                     status = "[DONE] Parsed & Indexed" if f["is_parsed"] else "[WAIT] Pending Parse"
-                    full_src_path = (self.output_dir / f["rel_path"]).resolve()
-                    full_md_path = (self.parsed_dir / f["rel_path"]).with_suffix(".md").resolve()
+                    full_src_path = Path(f["full_path"]).resolve() if "full_path" in f else (self.output_dir / f["rel_path"]).resolve()
+                    full_md_path = Path(f["parsed_md_path"]).resolve() if "parsed_md_path" in f else (self.parsed_dir / f["rel_path"]).with_suffix(".md").resolve()
                     
                     if full_src_path.exists() and full_md_path.exists():
                         file_url = full_src_path.as_uri()

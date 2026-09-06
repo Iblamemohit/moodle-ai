@@ -17,10 +17,10 @@ Use this skill when the user wants to sync, download, or update their course mat
        ```
      - If the tool returns available semesters (e.g., `[2601]: Semester 1 2026-2027`, `[all]: All Semesters`), ask the user which semester they would like to sync!
 2. **Execute Streaming Sync**:
-   - Once the user specifies a semester (e.g., `2601`, `all`, or `custom`), run:
+   - Once the user specifies a semester (e.g., `2601`, `all`, `custom`, or `user` to sync personal files from `user_files/`), run:
      ```bash
      python agent_tools.py /sync "<SEMESTER_CODE>" --json
      ```
-   - **Streaming Processing**: As each file downloads from Moodle courses and registered custom URLs, it is immediately converted to Markdown, embedded in ChromaDB & BM25, and registered in `list.md` in real-time.
+   - **Streaming Processing**: As each file downloads from Moodle courses, registered custom URLs, or is discovered in `user_files/`, it is immediately converted to Markdown, embedded in ChromaDB & BM25, and registered in `list.md` in real-time.
 3. **Report Results**:
    - Report the number of courses and custom URLs synced, documents converted to Markdown, chunks indexed, and provide the link to [`list.md`](list.md).

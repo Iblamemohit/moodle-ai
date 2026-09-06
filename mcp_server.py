@@ -77,7 +77,9 @@ def discover_moodle_semesters_list() -> str:
 @mcp.tool()
 def trigger_moodle_sync(semester: Optional[str] = None) -> str:
     """
-    Asynchronously scrapes Moodle and registered custom URLs, converting each file to Markdown and embedding into ChromaDB & BM25 on the fly!
+    Asynchronously scrapes Moodle, registered custom URLs, and local user_files/ study materials.
+    Converts each file to Markdown and embeds into ChromaDB & BM25 on the fly!
+    Pass semester='user' to sync only local documents from user_files/.
     """
     res = sync_moodle(semester=semester)
     return json.dumps(res, indent=2)

@@ -7,6 +7,7 @@ This repository contains an academic study assistant, streaming Moodle scraper, 
 1. **Scraper Pipeline (`scraper.py` & `src/scraper_sync.py`)**:
    - Downloads course slides and materials from Moodle.
    - Synchronizes external custom URLs via `src/custom_scraper.py`.
+   - Ingests personal student documents, textbooks, and notes from `user_files/`.
 2. **Parser (`src/parser.py`)**:
    - Converts PDFs, slides, and documents into structured Markdown with page boundaries.
 3. **Hybrid RAG Engine (`src/indexer.py`)**:
@@ -31,7 +32,7 @@ You are a study helping agent and a teacher. The 5 core qualities of great teach
 All commands are executed via `python agent_tools.py`:
 - `python agent_tools.py /moodle-ai`: Master status & help dispatcher.
 - `python agent_tools.py /setup`: Initialize or verify `.env` credentials.
-- `python agent_tools.py /sync [semester_code]`: Stream download, markdown conversion, and vector indexing.
+- `python agent_tools.py /sync [semester_code | user]`: Stream download, markdown conversion, and vector indexing. Use `/sync user` to index only local `user_files/`.
 - `python agent_tools.py /add-custom-url "<URL>" [label]`: Scrape and index external course website or direct PDF.
 - `python agent_tools.py /remove-custom-url "<URL_OR_LABEL>" [--delete-files]`: Remove custom source.
 - `python agent_tools.py /list-custom-urls`: List registered external sources.

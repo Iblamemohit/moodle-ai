@@ -29,6 +29,7 @@ def get_config():
     password = os.getenv("KERBEROS_PASSWORD", "")
     baseurls = os.getenv("MOODLE_BASEURLS", "https://moodle.iitd.ac.in/, https://moodlenew.iitd.ac.in/")
     output_dir = os.getenv("OUTPUT_DIR", "output")
+    user_files_dir = os.getenv("USER_FILES_DIR", "user_files")
     parsed_dir = os.getenv("PARSED_DIR", "data/parsed")
     chroma_dir = os.getenv("CHROMA_DIR", "data/chroma_db")
     db_path = os.getenv("KNOWLEDGE_DB_PATH", "data/moodle_knowledge.db")
@@ -36,11 +37,15 @@ def get_config():
 
     urls_list = [u.strip() for u in baseurls.split(",") if u.strip()]
 
+    user_files_resolved = (WORKSPACE_DIR / user_files_dir).resolve()
+    user_files_resolved.mkdir(parents=True, exist_ok=True)
+
     return {
         "user": user,
         "password": password,
         "baseurls": urls_list,
         "output_dir": str((WORKSPACE_DIR / output_dir).resolve()),
+        "user_files_dir": str(user_files_resolved),
         "parsed_dir": str((WORKSPACE_DIR / parsed_dir).resolve()),
         "chroma_dir": str((WORKSPACE_DIR / chroma_dir).resolve()),
         "db_path": str((WORKSPACE_DIR / db_path).resolve()),
@@ -60,6 +65,7 @@ def init_env_template():
             "MOODLE_BASEURLS=https://moodle.iitd.ac.in/, https://moodlenew.iitd.ac.in/\n"
             "TRACKED_SEMESTER=\n"
             "OUTPUT_DIR=output\n"
+            "USER_FILES_DIR=user_files\n"
             "PARSED_DIR=data/parsed\n"
             "CHROMA_DIR=data/chroma_db\n"
         )
@@ -67,7 +73,7 @@ def init_env_template():
             f.write(template_content)
     return str(ENV_PATH)
 
-def save_env_config(user, password, baseurls=None, output_dir=None, tracked_semester=None):
+def save_env_config(user, password, baseurls=None, output_dir=None, tracked_semester=None, user_files_dir=None):
     """Saves user credentials, tracked semester, and paths to .env."""
     lines = [
         f"KERBEROS_USER={user}",
@@ -91,6 +97,12 @@ def save_env_config(user, password, baseurls=None, output_dir=None, tracked_seme
     else:
         curr_out = os.getenv("OUTPUT_DIR", "output")
         lines.append(f"OUTPUT_DIR={curr_out}")
+
+    if user_files_dir:
+        lines.append(f"USER_FILES_DIR={user_files_dir}")
+    else:
+        curr_uf = os.getenv("USER_FILES_DIR", "user_files")
+        lines.append(f"USER_FILES_DIR={curr_uf}")
 
     lines.append("PARSED_DIR=data/parsed")
     lines.append("CHROMA_DIR=data/chroma_db")

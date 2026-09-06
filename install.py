@@ -106,6 +106,15 @@ def step_setup_env():
     else:
         print_success(".env file is present.")
 
+    # Ensure user_files folder exists
+    user_files_dir = WORKSPACE_DIR / "user_files"
+    user_files_dir.mkdir(parents=True, exist_ok=True)
+    gitkeep = user_files_dir / ".gitkeep"
+    if not gitkeep.exists():
+        with open(gitkeep, "w", encoding="utf-8") as f:
+            f.write("# Keep user_files directory in version control\n")
+    print_success("User files directory ready (user_files/).")
+
 def update_json_mcp_config(config_file: Path, server_name: str, python_path: Path, script_path: Path):
     config_file.parent.mkdir(parents=True, exist_ok=True)
     data = {}

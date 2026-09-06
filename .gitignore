@@ -34,3 +34,9 @@ list.md
 
 # Local workspace caches
 graphify-out/
+
+# User-provided study documents (preserve README.md and .gitkeep)
+user_files/*
+!user_files/README.md
+!user_files/.gitkeep
+

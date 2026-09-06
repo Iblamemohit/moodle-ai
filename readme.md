@@ -49,10 +49,13 @@ Enter your IIT Delhi Kerberos ID and password securely into the generated `.env`
 python agent_tools.py /setup
 ```
 
-### 3. Syncing Course Materials & Custom URLs
+### 3. Syncing Course Materials, Custom URLs & Personal PDFs
 ```bash
-# Sync active semester + all registered custom URLs
+# Sync active semester + custom URLs + local user_files/
 python agent_tools.py /sync
+
+# Sync only local user_files/ (fast, offline)
+python agent_tools.py /sync user
 
 # Sync a specific semester
 python agent_tools.py /sync 2601
@@ -61,7 +64,14 @@ python agent_tools.py /sync 2601
 python agent_tools.py /sync custom
 ```
 
-### 4. Adding External Custom Webpages & PDFs
+### 4. Adding Your Own PDFs & Notes (`user_files/`)
+Drop your own lecture slides, notes, assignments, problem sets, or textbooks (`.pdf`, `.pptx`, `.docx`, `.txt`, `.md`) directly into `user_files/`:
+- Put files directly in `user_files/` (categorized under `General`)
+- Or organize by course/topic subfolders (e.g. `user_files/COL106/Data_Structures.pdf`)
+
+Run `python agent_tools.py /sync user` (or `/sync user` in chat) to instantly parse and index them!
+
+### 5. Adding External Custom Webpages & PDFs
 Add arbitrary external URLs (course homepages, professor notes, syllabus links, public PDFs):
 ```bash
 python agent_tools.py /add-custom-url "https://example.com/notes.pdf" "Extra_Notes"
@@ -119,6 +129,7 @@ moodle-ai/
 ├── .claude/skills/            # Claude Code native skills
 ├── agent_tools.py             # CLI dispatcher & high-level RAG tools
 ├── mcp_server.py              # Official MCP standard server (moodle-ai)
+├── user_files/                # Dedicated folder for user's personal PDFs and notes
 └── src/
     ├── config.py              # Environment configuration loader
     ├── custom_scraper.py      # Custom URL scraper & source manager

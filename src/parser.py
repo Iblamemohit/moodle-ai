@@ -134,9 +134,10 @@ def parse_docx_to_markdown(filepath):
 
 
 class DocumentParser:
-    def __init__(self, output_dir, parsed_dir):
-        self.output_dir = Path(output_dir)
-        self.parsed_dir = Path(parsed_dir)
+    def __init__(self, output_dir, parsed_dir, user_files_dir=None):
+        self.output_dir = Path(output_dir).resolve()
+        self.parsed_dir = Path(parsed_dir).resolve()
+        self.user_files_dir = Path(user_files_dir).resolve() if user_files_dir else None
         self.parsed_dir.mkdir(parents=True, exist_ok=True)
         self.hash_cache_file = self.parsed_dir / '.file_hashes.json'
         self.hashes = self._load_hashes()
@@ -159,14 +160,26 @@ class DocumentParser:
         if not filepath.exists() or filepath.name.startswith('.'):
             return []
 
-        try:
-            rel_path = filepath.relative_to(self.output_dir)
-        except ValueError:
-            rel_path = Path(filepath.name)
+        # Check if file is inside user_files_dir
+        if self.user_files_dir and (filepath == self.user_files_dir or self.user_files_dir in filepath.parents):
+            sub_rel = filepath.relative_to(self.user_files_dir)
+            rel_path = Path("User_Files") / sub_rel
+            sem_label = "User_Files"
+            # If user organized by subfolder (e.g. user_files/COL106/slide.pdf) -> course is COL106
+            # If placed directly in user_files/ (e.g. user_files/slide.pdf) -> course is General
+            if len(sub_rel.parts) > 1:
+                course_name = sub_rel.parts[0]
+            else:
+                course_name = "General"
+        else:
+            try:
+                rel_path = filepath.relative_to(self.output_dir)
+            except ValueError:
+                rel_path = Path(filepath.name)
 
-        parts = rel_path.parts
-        sem_label = parts[0] if len(parts) > 0 else 'Unknown_Semester'
-        course_name = parts[1] if len(parts) > 1 else 'Unknown_Course'
+            parts = rel_path.parts
+            sem_label = parts[0] if len(parts) > 0 else 'Unknown_Semester'
+            course_name = parts[1] if len(parts) > 1 else 'Unknown_Course'
 
         curr_hash = compute_file_hash(filepath)
         cached_hash = self.hashes.get(str(rel_path))
@@ -388,13 +401,18 @@ class DocumentParser:
         all_chunks = []
         supported_exts = {'.pdf', '.pptx', '.ppt', '.docx', '.zip', '.txt', '.md', '.html', '.htm'}
         
-        for root_d, _, files in os.walk(self.output_dir):
-            if '.dump' in root_d:
-                continue
-            for f in files:
-                ext = Path(f).suffix.lower()
-                if ext in supported_exts and not f.startswith('.'):
-                    file_path = os.path.join(root_d, f)
-                    chunks = self.parse_file(file_path, force=force)
-                    all_chunks.extend(chunks)
+        target_dirs = [self.output_dir]
+        if self.user_files_dir and self.user_files_dir.exists():
+            target_dirs.append(self.user_files_dir)
+
+        for base_dir in target_dirs:
+            for root_d, _, files in os.walk(base_dir):
+                if '.dump' in root_d:
+                    continue
+                for f in files:
+                    ext = Path(f).suffix.lower()
+                    if ext in supported_exts and not f.startswith('.'):
+                        file_path = os.path.join(root_d, f)
+                        chunks = self.parse_file(file_path, force=force)
+                        all_chunks.extend(chunks)
         return all_chunks

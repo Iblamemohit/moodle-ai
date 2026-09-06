@@ -225,7 +225,7 @@ def moodle_list(regenerate: bool = False) -> Dict[str, Any]:
     """
     from src.list_manager import ListManager
     config = get_config()
-    list_mgr = ListManager(config["workspace_dir"], config["output_dir"], config["parsed_dir"])
+    list_mgr = ListManager(config["workspace_dir"], config["output_dir"], config["parsed_dir"], user_files_dir=config["user_files_dir"])
     
     if regenerate or not list_mgr.list_file_path.exists():
         markdown_content = list_mgr.update_list_file()
@@ -275,6 +275,7 @@ def moodle_ask(query: str, doc_filter: Optional[str] = None, course_filter: Opti
 
     parsed_dir = Path(config["parsed_dir"])
     output_dir = Path(config["output_dir"])
+    user_files_dir = Path(config["user_files_dir"])
 
     # Format retrieved Moodle context
     retrieved_chunks = []
@@ -295,7 +296,10 @@ def moodle_ask(query: str, doc_filter: Optional[str] = None, course_filter: Opti
             try:
                 rel_path = src_path.relative_to(output_dir)
             except ValueError:
-                rel_path = Path(src_path.name)
+                try:
+                    rel_path = Path("User_Files") / src_path.relative_to(user_files_dir)
+                except ValueError:
+                    rel_path = Path(src_path.name)
             md_path = (parsed_dir / rel_path).with_suffix(".md")
             if md_path.exists():
                 md_url = md_path.resolve().as_uri()
@@ -533,9 +537,10 @@ if __name__ == "__main__":
                 "name": "moodle-ai",
                 "version": "1.0.0-alpha",
                 "description": "Academic Study Assistant & Moodle Streaming RAG Engine",
+                "user_files_folder": "user_files/ (drop custom PDFs, slides, and notes here)",
                 "available_commands": [
                     "/setup",
-                    "/sync [semester]",
+                    "/sync [semester | user]",
                     "/add-custom-url <URL> [label]",
                     "/remove-custom-url <URL_OR_LABEL>",
                     "/list-custom-urls",
