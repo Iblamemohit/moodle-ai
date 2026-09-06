@@ -1,17 +1,41 @@
 # moodle-ai
 
-A privacy-first, offline-capable AI Study Agent, Streaming Moodle Scraper, Custom URL Scraper, and Knowledge Retrieval Engine for university course materials.
+<p align="center">
+  <img src="https://img.shields.io/badge/Python-3.10%2B-blue?logo=python&logoColor=white" alt="Python 3.10+" />
+  <img src="https://img.shields.io/badge/Protocol-MCP%202.x-8A2BE2" alt="Model Context Protocol" />
+  <img src="https://img.shields.io/badge/Retrieval-Hybrid%20RAG%20(Dense%20%2B%20BM25)-success" alt="Hybrid RAG" />
+  <img src="https://img.shields.io/badge/Embeddings-Local%20ONNX%20(all--MiniLM--L6--v2)-orange" alt="Local ONNX" />
+  <img src="https://img.shields.io/badge/Privacy-100%25%20Local%20%26%20Zero--Telemetry-brightgreen" alt="Privacy First" />
+  <img src="https://img.shields.io/badge/License-MIT-green.svg" alt="License" />
+</p>
 
-It downloads course slides, external course webpages, and PDFs, converts them into structured Markdown, indexes them into a local **Hybrid Vector + Keyword Search engine (ChromaDB + BM25)**, and works out-of-the-box in **Antigravity**, **Claude (Desktop & Code)**, **Cursor**, **Codex / VS Code**, **Windsurf**, and the command line.
+An intelligent, privacy-first study assistant and knowledge retrieval engine engineered for university courses. 
+
+**moodle-ai** automatically streams course slides, lecture decks, external course websites, and your personal notes, parses them into slide-structured Markdown, and indexes every page into a local **Hybrid Retrieval Engine (Dense ONNX Vectors + BM25 Lexical + Reciprocal Rank Fusion)**. It exposes standard MCP tools natively into **Antigravity**, **Claude (Desktop & Code)**, **Cursor**, **Codex / VS Code**, **Windsurf**, or directly via an interactive CLI.
 
 ---
 
-## 1-Command Universal Installation
+## Why moodle-ai vs. Dragging PDFs into Web LLMs?
 
-Run one single command from inside the repository folder, and everything (virtual environment, dependencies, `.env` template, and MCP server registrations across all your IDEs) will be automatically installed and configured:
+When you drop 50 slide decks into ChatGPT, Claude, or Gemini Web, you run straight into the **"Lost-in-the-Middle"** context problem. Here is how `moodle-ai` is engineered differently:
+
+| Challenge | Drag-and-Drop Web LLMs | `moodle-ai` Architecture |
+| :--- | :--- | :--- |
+| **Semester-Scale Memory** | Dumps 1,000+ pages into one prompt. Suffers from attention dilution, mixing up courses and missing obscure formulas. | **Hybrid RAG (RRF)**: Pre-indexes every page locally. Pinpoints the exact 3–5 slides across your entire semester with surgical accuracy. |
+| **Parsing Fidelity** | Strips PDFs into raw text streams. Headers, slide boundaries, math equations, and tables get scrambled. | **Slide-Preserving Parsers**: Uses `PyMuPDF4LLM` to maintain exact slide boundaries (`<!-- Page X -->`), tables, and LaTeX formulas. |
+| **Course Grounding** | Answers from broad internet data (e.g. citing US ACI or Eurocodes instead of Indian Standards *IS 456*). | Grounded 100% in your actual department slides, grading distribution, and professor notations. |
+| **Citations & Proof** | Vaguely says *"According to the document..."*, forcing you to manually scroll 150 slides to verify. | **Clickable Dual Links**: Instant one-click jump to the exact PDF page in Preview and the structured Markdown notes. |
+| **Engineering Diagrams** | Text extractors see nothing on diagram-heavy slides (Mohr's circles, shear force curves, charts). | **Visual Fallback Pipeline**: Automatically renders low-text candidate slides into high-res PNGs for multimodal vision inspection. |
+| **Session Persistence** | Re-uploading files every new chat tab or window. | Permanent local indexing of Moodle, external lab sites, and offline notes in `user_files/`. |
+
+---
+
+## ⚡ 1-Command Universal Installation
+
+Run one command from inside the repository. It auto-creates the virtual environment, downloads ONNX model weights, creates your local `.env`, and registers the MCP server across all installed IDEs:
 
 ```bash
-# Option A: Python Installer
+# Option A: Python Universal Installer (Recommended)
 python3 install.py
 
 # Option B: Shell Script
@@ -23,122 +47,151 @@ python3 agent_tools.py /install
 
 ---
 
-## Supported IDEs & Zero-Config Setup
+## Supported Environments & Zero-Config IDE Setup
 
-| Environment | Setup Method | What Works |
+`install.py` auto-detects and configures all your installed developer tools:
+
+| Environment | Configuration Path | What Works |
 | :--- | :--- | :--- |
-| **Antigravity IDE** | Open folder or run `/moodle-ai` | Auto-detects `.agents/skills/` & MCP tools |
-| **Claude Desktop** | Pre-configured by `install.py` | Full MCP tools (`moodle-ai`) |
-| **Cursor** | Open project folder (`.cursor/mcp.json`) | Native MCP server ready on project open |
-| **VS Code / Codex** | Open project folder (`.vscode/mcp.json`) | Native MCP server ready on project open |
-| **Windsurf** | Pre-configured by `install.py` | Global MCP server registration |
-| **Terminal / CLI** | Run `python agent_tools.py <command>` | Direct interactive CLI dispatcher |
+| **Antigravity IDE** | `.agents/skills/` | Full modular skills suite (`/moodle-ai`, `/ask`, `/quiz`, `/sync`) + MCP |
+| **Claude Desktop** | `claude_desktop_config.json` | Registered MCP tools (`moodle_search_and_ask`, `generate_quiz`) |
+| **Claude Code** | `.claude/skills/` | Native slash skills and CLI commands |
+| **Cursor** | `.cursor/mcp.json` | Instant workspace MCP tool discovery on open |
+| **VS Code / Codex** | `.vscode/mcp.json` | Project-level MCP server integration |
+| **Windsurf** | `~/.codeium/windsurf/mcp_config.json` | Global Cascade assistant MCP registration |
+| **Terminal / CLI** | `python agent_tools.py <command>` | Interactive standalone terminal dispatcher |
 
 ---
 
-## Workflows & Commands
+## Core Features & Workflow
 
-### 1. Master Command
-```bash
-python agent_tools.py /moodle-ai
+```text
+       Moodle LMS (Kerberos SSO)
+                   +
+      Custom Web URLs (HTML / Reveal.js)    ──►  Streaming Sync Pipeline (Async)
+                   +
+     Personal Notes (user_files/*.pdf)
+                   │
+                   ▼
+       PyMuPDF4LLM Markdown Parser  ──►  Preserves <!-- Page X -->, Tables & Math
+                   │
+                   ▼
+     ┌──────────────────────────────────────────────────────────┐
+     │              Hybrid Retrieval Engine (RRF)               │
+     │  Dense: ONNX all-MiniLM-L6-v2  +  Lexical: BM25 (SQLite) │
+     └──────────────────────────┬───────────────────────────────┘
+                                │
+             ┌──────────────────┴──────────────────┐
+             ▼                                     ▼
+   Text Query Matches                    Visual / Diagram Query
+(Dual Clickable Citations)            (High-Res PNG Visual Fallback)
 ```
 
-### 2. Initial Setup
-Enter your IIT Delhi Kerberos ID and password securely into the generated `.env` file (passwords are never typed in LLM chat prompts):
+### 1. Setup Your Credentials
+Store your Moodle credentials locally in `.env`. Your password is encrypted locally and never exposed in chat prompts:
 ```bash
 python agent_tools.py /setup
 ```
 
-### 3. Syncing Course Materials, Custom URLs & Personal PDFs
+### 2. Stream Sync Semester Courses
+Stream-download course materials, convert them to Markdown, and index vectors in one pass:
 ```bash
-# Sync active semester + custom URLs + local user_files/
+# Sync active semester + external URLs + personal notes
 python agent_tools.py /sync
 
-# Sync only local user_files/ (fast, offline)
+# Sync only local notes and textbooks in user_files/ (instant, offline)
 python agent_tools.py /sync user
 
-# Sync a specific semester
+# Sync a specific semester code
 python agent_tools.py /sync 2601
-
-# Sync only custom external URLs
-python agent_tools.py /sync custom
 ```
 
-### 4. Adding Your Own PDFs & Notes (`user_files/`)
-Drop your own lecture slides, notes, assignments, problem sets, or textbooks (`.pdf`, `.pptx`, `.docx`, `.txt`, `.md`) directly into `user_files/`:
-- Put files directly in `user_files/` (categorized under `General`)
-- Or organize by course/topic subfolders (e.g. `user_files/COL106/Data_Structures.pdf`)
+### 3. Add Personal Notes & Textbooks (`user_files/`)
+Drop any PDF, PPTX, DOCX, or Markdown file directly into `user_files/`:
+```text
+user_files/
+├── CVL245A/
+│   ├── Additional_Solved_Problems.pdf
+│   └── IS_456_2000_Plain_and_Reinforced_Concrete.pdf
+└── HUL281A/
+    └── Constitution_and_Key_Court_Judgments.pdf
+```
+Run `python agent_tools.py /sync user` to index them immediately.
 
-Run `python agent_tools.py /sync user` (or `/sync user` in chat) to instantly parse and index them!
-
-### 5. Adding External Custom Webpages & PDFs
-Add arbitrary external URLs (course homepages, professor notes, syllabus links, public PDFs):
+### 4. Index External Course Sites & Slides
+Scrape and index external course homepages, lecture websites, or public PDFs (including Reveal.js slides):
 ```bash
-python agent_tools.py /add-custom-url "https://example.com/notes.pdf" "Extra_Notes"
+python agent_tools.py /add-custom-url "https://hpmlab.iitd.ac.in/courses/cvl282/" "CVL282_Lab"
 ```
 
-### 5. Asking Questions with Direct PDF Citations
+### 5. Ask Questions with Dual Clickable Citations
 ```bash
-python agent_tools.py /ask "What is total float in CPM?"
-```
-Every citation is formatted with dual clickable links for instant access to the source file and parsed markdown notes.
-
-### 6. Managing Custom URLs
-```bash
-# List all registered external sources
-python agent_tools.py /list-custom-urls
-
-# Remove a custom URL and optionally delete its files
-python agent_tools.py /remove-custom-url "Extra_Notes" --delete-files
+python agent_tools.py /ask "Explain the Limit State of collapse in flexure according to IS 456"
 ```
 
-### 7. Practice Exams & Quizzes
+Every response references verifiable, clickable links:
+> According to **IS 456 Clause 38.1**, the maximum strain in concrete at the outermost compression fiber is taken as 0.0035 in bending...
+> 
+> **Sources:**
+> * `[CVL245A / IS_456_2000.pdf (Page 67)](file:///Users/.../IS_456_2000.pdf)` ([Markdown View](file:///Users/.../IS_456_2000.md))
+
+### 6. Interactive Practice Quizzes for Exams
+Generate practice exams with multiple-choice, numerical, and conceptual questions grounded directly in your syllabus:
 ```bash
 python agent_tools.py /quiz "2601-CVL245A"
 ```
 
-### 8. 1-Click Updates
-Pull the latest improvements and refresh virtual environment dependencies without touching your local `.env` or downloaded slides:
-```bash
-python agent_tools.py /update-version
+### 7. Automated Multimodal Visual Fallback
+When a slide contains diagrams, shear force charts, structural drawings, or low-density text:
+- The visual pipeline (`src/visual_fallback.py`) renders the slide into a 300-DPI PNG in `data/visual_cache/`.
+- Multimodal models inspect the exact figure, graph, or reinforcement schematic directly.
+
+---
+
+## 🛠️ Project Structure
+
+```text
+moodle-study-tool/
+├── install.py                 # Universal 1-click auto-configurator
+├── install.sh                 # Fast setup bash script
+├── agent_tools.py             # CLI dispatcher for all study tools
+├── mcp_server.py              # Official MCP standard server
+├── list.md                    # Auto-generated catalog of indexed course materials
+├── user_files/                # Directory for your personal offline PDFs & notes
+├── .agents/skills/            # 10 modular Antigravity AI skills
+│   ├── moodle-ai/             # Master study agent & tutor
+│   ├── moodle-sync/           # Streaming course scraper & indexer
+│   ├── moodle-ask/            # Hybrid RAG search engine
+│   ├── moodle-quiz/           # Syllabus-grounded practice exam generator
+│   ├── moodle-add-custom-url/ # Custom external webpage / PDF scraper
+│   ├── moodle-remove-custom-url/
+│   ├── moodle-list/           # Interactive course document explorer
+│   ├── moodle-change-sync/    # Semester selector
+│   ├── moodle-setup/          # Secure credential manager
+│   └── moodle-update-version/ # 1-click git pull & dependency updater
+└── src/
+    ├── config.py              # Environment settings & directory paths
+    ├── custom_scraper.py      # Web scraper for external course sites & HTML slides
+    ├── parser.py              # PyMuPDF4LLM Markdown parser with SHA-256 caching
+    ├── embeddings.py          # Standalone ONNX runtime (all-MiniLM-L6-v2)
+    ├── indexer.py             # SQLite + BM25 Hybrid Retriever with RRF ranking
+    ├── visual_fallback.py     # Multimodal PDF slide diagram renderer
+    ├── scraper_sync.py        # Live multi-source indexing coordinator
+    ├── list_manager.py        # Course catalog & Markdown link generator
+    └── web_search.py          # Wikipedia REST fallback retrieval
 ```
 
 ---
 
-## Project Architecture
+## 🔒 Privacy & Local Processing
 
-```text
-moodle-ai/
-├── install.py                 # Universal 1-click installer & auto-configurator
-├── install.sh                 # Executable setup shell script
-├── AGENTS.md                  # Universal agent directives & architecture
-├── CLAUDE.md                  # Claude Code & Desktop instructions
-├── .cursor/mcp.json           # Native Cursor MCP config
-├── .vscode/mcp.json           # Native VS Code & Codex MCP config
-├── .agents/skills/            # 10 modular Antigravity custom skills
-│   ├── moodle-ai/             # Master AI tutor skill
-│   ├── moodle-sync/           # Streaming sync skill
-│   ├── moodle-add-custom-url/ # Custom URL scraper skill
-│   ├── moodle-remove-custom-url/
-│   ├── moodle-ask/            # Hybrid RAG search skill
-│   ├── moodle-quiz/           # Practice quiz skill
-│   ├── moodle-list/           # Document catalog skill
-│   ├── moodle-change-sync/    # Semester switch skill
-│   ├── moodle-setup/          # Secure credential setup skill
-│   └── moodle-update-version/ # 1-click auto-updater skill
-├── .claude/skills/            # Claude Code native skills
-├── agent_tools.py             # CLI dispatcher & high-level RAG tools
-├── mcp_server.py              # Official MCP standard server (moodle-ai)
-├── user_files/                # Dedicated folder for user's personal PDFs and notes
-└── src/
-    ├── config.py              # Environment configuration loader
-    ├── custom_scraper.py      # Custom URL scraper & source manager
-    ├── parser.py              # PyMuPDF4LLM Markdown parser with SHA-256 caching
-    ├── embeddings.py          # Standalone ONNX runtime all-MiniLM-L6-v2 embeddings
-    ├── indexer.py             # SQLite + BM25 Hybrid Retriever with RRF
-    ├── visual_fallback.py     # Multimodal PDF slide diagram renderer
-    ├── scraper_sync.py        # Moodle & Custom URL live indexing coordinator
-    ├── list_manager.py        # Document hierarchy link indexer
-    └── web_search.py          # Wikipedia REST fallback retrieval
-```
+- **Zero Cloud Leakage**: Document parsing, ONNX embeddings, BM25 indexing, and search ranking run 100% locally on your machine.
+- **No Stored Passwords in AI Chat**: Passwords stay inside your local, git-ignored `.env` file.
+- **Offline Capable**: Once course slides are synced, you can query notes, read markdown summaries, and generate study reviews completely offline without an active internet connection.
+
+---
+
+## 📄 License
+
+MIT License. Engineered for academic research and personal study productivity.
 

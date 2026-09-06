@@ -40,3 +40,5 @@ user_files/*
 !user_files/README.md
 !user_files/.gitkeep
 
+.agents/skills/linkedin-marketing/*
+skills-lock.json
