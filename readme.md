@@ -30,9 +30,24 @@ When you drop 50 slide decks into ChatGPT, Claude, or Gemini Web, you run straig
 
 ---
 
-## ⚡ 1-Command Universal Installation
+## ⚡ Installation Guidelines
 
-Run one command from inside the repository. It auto-creates the virtual environment, downloads ONNX model weights, creates your local `.env`, and registers the MCP server across all installed IDEs:
+Getting started takes less than a minute with zero manual friction:
+
+### 🚀 The Simplest Way (Any AI Agent / Harness)
+1. **Download the folder**: Download or clone the `moodle-ai` repository to your computer.
+2. **Open any harness**: Open your preferred AI coding harness or editor (such as **Antigravity**, **Cursor**, **Claude Code**, **VS Code**, or **Windsurf**).
+3. **Open project**: Create a new project and select the downloaded `moodle-ai` folder.
+4. **Just write `setup`**: In the chat or agent prompt, simply type:
+   ```text
+   setup
+   ```
+   (or `/setup`). The agent will automatically handle environment configuration, install dependencies, guide your credentials setup, and register all tools.
+
+---
+
+### 💻 Alternative: 1-Command Terminal Setup
+If you prefer running installation from the terminal inside the repository:
 
 ```bash
 # Option A: Python Universal Installer (Recommended)
