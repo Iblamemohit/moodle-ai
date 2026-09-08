@@ -40,6 +40,40 @@ def sanitize_name(name: str) -> str:
     return cleaned or "unnamed"
 
 
+def realign_lecture_filename(filename: str, activity_name: str = None) -> str:
+    """
+    If the activity title indicates a lecture/sequence number that contradicts the
+    uploaded filename's number (e.g. activity is "Lecture 6: ...", but file is "Lecture7.pdf"),
+    the Moodle activity name represents the professor's syllabus sequence and takes
+    precedence to re-align/normalize the filename (e.g. to "Lecture6.pdf").
+    """
+    if not filename or not activity_name:
+        return filename
+
+    act_m = re.search(r'\b(?:lecture|lec|assignment|assign|tutorial|tut|ps|problem\s*set)\s*[-_.:#]?\s*0*(\d+)\b', str(activity_name), re.IGNORECASE)
+    file_m = re.search(r'\b(?:lecture|lec|assignment|assign|tutorial|tut|ps|problem\s*set)\s*[-_.:#]?\s*0*(\d+)\b', str(filename), re.IGNORECASE)
+
+    if act_m and file_m:
+        try:
+            act_num = int(act_m.group(1))
+            file_num = int(file_m.group(1))
+            if act_num != file_num:
+                base, ext = os.path.splitext(filename)
+                if not ext:
+                    ext = '.pdf'
+                # Preserve leading zero padding if the original filename used it (e.g. Lec07 -> Lec06)
+                orig_num_str = file_m.group(1)
+                num_str = str(act_num)
+                if len(orig_num_str) > len(num_str):
+                    num_str = num_str.zfill(len(orig_num_str))
+                start, end = file_m.span(1)
+                new_base = base[:start] + num_str + base[end:]
+                return f"{new_base}{ext}"
+        except (ValueError, IndexError):
+            pass
+    return filename
+
+
 class colors:
     HEADER = '\033[95m'
     OKBLUE = '\033[94m'
@@ -520,36 +554,13 @@ def downloadResource(session_obj, res, path, activity_name=None, course_key=None
     except (TypeError, AttributeError, KeyError):
         return
 
-    # 1. Check if src directly contains an uploaded filename (e.g. static pluginfile URL)
-    parsed_src = urllib.parse.urlparse(src)
-    url_base = os.path.basename(parsed_src.path)
-    if url_base and '.' in url_base and not url_base.endswith('.php'):
-        tentative_name = sanitize_name(urllib.parse.unquote(url_base))
-        tentative_dst = os.path.abspath(os.path.join(path, tentative_name))
-        
-        # Check against list.md catalog upfront (0 network requests, 0 disk scans)
-        if known_catalog:
-            if (tentative_dst in known_catalog.get("paths", set()) or (course_key, tentative_name) in known_catalog.get("course_files", set())) \
-               and os.path.exists(tentative_dst) and os.path.getsize(tentative_dst) > 0:
-                print('[' + colors.OKBLUE + 'skip' + colors.ENDC + '] |  |  +--%s' % tentative_name)
-                if on_file_saved:
-                    try:
-                        on_file_saved(tentative_dst, is_new=False)
-                    except Exception:
-                        pass
-                return
+    # Request headers only with stream=True so large payloads aren't buffered prematurely
+    try:
+        r = session_obj.get(src, stream=True, allow_redirects=True)
+    except Exception as e:
+        print('[' + colors.FAIL + 'fail' + colors.ENDC + '] |  |  +--%s (%s)' % (activity_name or src, e))
+        return
 
-        if os.path.exists(tentative_dst) and os.path.getsize(tentative_dst) > 0:
-            print('[' + colors.OKBLUE + 'skip' + colors.ENDC + '] |  |  +--%s' % tentative_name)
-            if on_file_saved:
-                try:
-                    on_file_saved(tentative_dst, is_new=False)
-                except Exception:
-                    pass
-            return
-
-    # 2. Request headers only with stream=True
-    r = session_obj.get(src, stream=True, allow_redirects=True)
     if r.status_code == 200:
         headers = {k.lower(): v for k, v in r.headers.items()}
         content_type = headers.get('content-type', '').lower()
@@ -598,43 +609,88 @@ def downloadResource(session_obj, res, path, activity_name=None, course_key=None
                 ext = '.html'
 
             if activity_name:
-                clean_act = re.sub(r'[\\/*?:"<>|]', '_', activity_name).strip()
+                clean_act = sanitize_name(activity_name)
                 if not any(clean_act.lower().endswith(e) for e in ('.pdf', '.pptx', '.ppt', '.docx', '.zip', '.txt', '.html')):
                     clean_act += ext
                 name = clean_act
             else:
                 name = f"resource{ext}"
 
+        # Re-align lecture/sequence number if activity title contradicts uploaded file number
+        name = realign_lecture_filename(name, activity_name)
         name = sanitize_name(urllib.request.url2pathname(name))
         dst = os.path.abspath(os.path.join(path, name))
-        
-        # Check if already cataloged in list.md or on disk
+
+        # Inspect Content-Length response header
+        content_length = None
+        if 'content-length' in headers:
+            try:
+                content_length = int(headers['content-length'])
+            except (ValueError, TypeError):
+                content_length = None
+
+        # Collision Disambiguation on Differing Content Length:
+        # If dst exists on disk, but content_length is known and differs from local file,
+        # the incoming file is a different file that happens to share the same filename.
+        if os.path.exists(dst) and content_length is not None and os.path.getsize(dst) != content_length:
+            local_size = os.path.getsize(dst)
+            orig_name = name
+            
+            # Step A: Attempt disambiguation using sanitized activity_name
+            base_ext = os.path.splitext(name)[1] or '.pdf'
+            if activity_name:
+                clean_act = sanitize_name(activity_name)
+                if not any(clean_act.lower().endswith(e) for e in ('.pdf', '.pptx', '.ppt', '.docx', '.zip', '.txt', '.html')):
+                    clean_act += base_ext
+                candidate_dst = os.path.abspath(os.path.join(path, clean_act))
+                if candidate_dst != dst:
+                    name = clean_act
+                    dst = candidate_dst
+
+            # Step B: If still collides or no activity_name, append a clean suffix (_1, _2, etc.)
+            if os.path.exists(dst) and (content_length is not None and os.path.getsize(dst) != content_length):
+                base_stem, ext = os.path.splitext(name)
+                suffix_idx = 1
+                while True:
+                    candidate_name = f"{base_stem}_{suffix_idx}{ext}"
+                    candidate_dst = os.path.abspath(os.path.join(path, candidate_name))
+                    if not os.path.exists(candidate_dst) or (content_length is not None and os.path.getsize(candidate_dst) == content_length):
+                        name = candidate_name
+                        dst = candidate_dst
+                        break
+                    suffix_idx += 1
+            
+            print('[' + colors.WARNING + 'collision' + colors.ENDC + '] |  |  +--%s -> %s (local %d B vs remote %d B)' % (orig_name, name, local_size, content_length))
+
+        # Check if already cataloged in list.md or on disk with matching content size
         if known_catalog and (dst in known_catalog.get("paths", set()) or (course_key, name) in known_catalog.get("course_files", set())) \
            and os.path.exists(dst) and os.path.getsize(dst) > 0:
-            r.close()
-            print('[' + colors.OKBLUE + 'skip' + colors.ENDC + '] |  |  +--%s' % name)
-            if on_file_saved:
-                try:
-                    on_file_saved(dst, is_new=False)
-                except Exception:
-                    pass
-            return
+            if content_length is None or os.path.getsize(dst) == content_length:
+                r.close()
+                print('[' + colors.OKBLUE + 'skip' + colors.ENDC + '] |  |  +--%s' % name)
+                if on_file_saved:
+                    try:
+                        on_file_saved(dst, is_new=False)
+                    except Exception:
+                        pass
+                return
 
         if os.path.exists(dst) and os.path.getsize(dst) > 0:
-            r.close()
-            print('[' + colors.OKBLUE + 'skip' + colors.ENDC + '] |  |  +--%s' % name)
-            if on_file_saved:
-                try:
-                    on_file_saved(dst, is_new=False)
-                except Exception:
-                    pass
-            if dst.lower().endswith('.zip'):
-                extract_dir = os.path.splitext(dst)[0]
-                if not os.path.exists(extract_dir) or not os.listdir(extract_dir):
-                    extract_zip(dst, extract_dir, on_file_saved=on_file_saved)
-            return
+            if content_length is None or os.path.getsize(dst) == content_length:
+                r.close()
+                print('[' + colors.OKBLUE + 'skip' + colors.ENDC + '] |  |  +--%s' % name)
+                if on_file_saved:
+                    try:
+                        on_file_saved(dst, is_new=False)
+                    except Exception:
+                        pass
+                if dst.lower().endswith('.zip'):
+                    extract_dir = os.path.splitext(dst)[0]
+                    if not os.path.exists(extract_dir) or not os.listdir(extract_dir):
+                        extract_zip(dst, extract_dir, on_file_saved=on_file_saved)
+                return
 
-        # It's a new file - stream blocks directly to file
+        # It's a new or disambiguated file - stream blocks directly to file
         try:
             os.makedirs(os.path.dirname(dst), exist_ok=True)
             with open(dst, 'wb') as handle:
@@ -688,6 +744,78 @@ def downloadFolder(session_obj, folder_url, path, course_key=None, known_catalog
                     name = m.group(1).strip('\"\' ')
                 saveFile(session_obj, resp.url, path, name, on_file_saved=on_file_saved)
                 return
+
+
+def downloadAssignment(session_obj, assign_url, path, activity_name=None, course_key=None, known_catalog=None, on_file_saved=None):
+    """
+    Downloads instructor question attachments from Moodle Assignment activities (/mod/assign/view.php).
+    Strictly ignores student submission files (e.g. assignsubmission_file).
+    """
+    try:
+        r = session_obj.get(assign_url, timeout=15)
+        if r.status_code != 200:
+            return
+        
+        soup = BeautifulSoup(r.text, 'html.parser')
+        found_links = []
+        
+        # 1. Target instructor intro/attachment containers
+        intro_containers = (
+            soup.find_all(id='intro')
+            + soup.find_all(class_='introattachment')
+            + soup.find_all(class_='activity-description')
+            + soup.find_all(attrs={'data-region': 'activity-information'})
+        )
+        
+        for container in intro_containers:
+            for a in container.find_all('a', href=True):
+                href = urllib.parse.urljoin(assign_url, a['href'].strip())
+                # Safety constraint: Do NOT download student submission files
+                if 'assignsubmission_' in href:
+                    continue
+                if '/pluginfile.php/' in href or 'introattachment' in href:
+                    if not any(href == item[0] for item in found_links):
+                        found_links.append((href, a))
+        
+        # 2. Also search page-wide for explicit introattachment links
+        for a in soup.find_all('a', href=lambda h: h and 'mod_assign/introattachment/' in h):
+            href = urllib.parse.urljoin(assign_url, a['href'].strip())
+            if 'assignsubmission_' in href:
+                continue
+            if not any(href == item[0] for item in found_links):
+                found_links.append((href, a))
+
+        # 3. Fallback: Check for direct document links within intro containers
+        if not found_links:
+            for container in intro_containers:
+                for a in container.find_all('a', href=True):
+                    href = urllib.parse.urljoin(assign_url, a['href'].strip())
+                    if 'assignsubmission_' in href:
+                        continue
+                    if any(href.lower().split('?')[0].endswith(ext) for ext in ('.pdf', '.docx', '.pptx', '.ppt', '.zip', '.txt', '.xlsx')):
+                        if not any(href == item[0] for item in found_links):
+                            found_links.append((href, a))
+        
+        # Download each instructor attachment
+        for href, a_tag in found_links:
+            a_copy = BeautifulSoup(str(a_tag), 'html.parser')
+            for hide in a_copy.find_all(class_='accesshide'):
+                hide.decompose()
+            link_text = a_copy.get_text().strip()
+            
+            # Use link text if informative; otherwise fall back to activity name
+            effective_act = link_text if (link_text and not link_text.lower().endswith(('.php', '.html'))) else activity_name
+            downloadResource(
+                session_obj,
+                href,
+                path,
+                activity_name=effective_act,
+                course_key=course_key,
+                known_catalog=known_catalog,
+                on_file_saved=on_file_saved
+            )
+    except Exception as e:
+        print('[' + colors.FAIL + 'fail' + colors.ENDC + '] |  |  +--%s (%s)' % (activity_name or assign_url, e))
 
 
 def is_generic_or_date_section(name):
@@ -747,10 +875,12 @@ def downloadSection(session_obj, s, path, course_key=None, known_catalog=None, o
                 f_path = os.path.join(secpath, f_name)
                 os.makedirs(f_path, exist_ok=True)
                 downloadFolder(session_obj, href, f_path + '/', course_key=course_key, known_catalog=known_catalog, on_file_saved=on_file_saved)
+            elif '/mod/assign/' in href:
+                downloadAssignment(session_obj, href, secpath, activity_name=link_name, course_key=course_key, known_catalog=known_catalog, on_file_saved=on_file_saved)
             elif '/mod/url/' in href or href.startswith('http'):
                 saveLink(session_obj, href, secpath, link_name, on_file_saved=on_file_saved)
 
-    # Activities: resources, folders, urls
+    # Activities: resources, folders, assignments, urls
     activities = s.find_all('li', class_=lambda c: c and 'activity' in c) or s.find_all(class_=lambda c: c and 'activity-item' in c)
     for act in activities:
         classes = act.get('class', [])
@@ -775,6 +905,8 @@ def downloadSection(session_obj, s, path, course_key=None, known_catalog=None, o
             f_path = os.path.join(secpath, f_name)
             os.makedirs(f_path, exist_ok=True)
             downloadFolder(session_obj, href, f_path + '/', course_key=course_key, known_catalog=known_catalog, on_file_saved=on_file_saved)
+        elif any('assign' in c for c in classes) or '/mod/assign/' in href:
+            downloadAssignment(session_obj, href, secpath, activity_name=act_name, course_key=course_key, known_catalog=known_catalog, on_file_saved=on_file_saved)
         elif any('url' in c for c in classes) or '/mod/url/' in href:
             url_name = act_name if act_name else 'link'
             saveLink(session_obj, href, secpath, url_name, on_file_saved=on_file_saved)
