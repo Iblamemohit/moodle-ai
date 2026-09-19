@@ -1450,7 +1450,7 @@ def main():
                 print(json.dumps({
                     "status": "success",
                     "name": "moodle-ai",
-                    "version": "1.0.0-alpha",
+                    "version": "1.1.0",
                     "description": "Academic Study Assistant & Moodle Streaming RAG Engine",
                     "user_files_folder": "user_files/ (drop custom PDFs, slides, and notes here)",
                     "available_commands": [
@@ -1462,11 +1462,16 @@ def main():
                         "/list",
                         "/ask <query>",
                         "/quiz [course]",
+                        "/profile",
+                        "/exam",
+                        "/weakness [course]",
+                        "/correct <course> <topic> <rule>",
+                        "/drill <course> <topic> [step] [user_answer]",
                         "/diagram <type> [params_json]",
                         "/pyq <paper_pdf> <course> [question_num]",
-                        "/drill <course> <topic> [step] [user_answer]",
                         "/cheatsheet <course>",
                         "/triage <course>",
+                        "/change-sync [semester]",
                         "/update-version",
                         "/install"
                     ]
