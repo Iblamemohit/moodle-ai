@@ -140,7 +140,7 @@ def step_setup_mcp_configs():
     print_step(4, "Auto-Configuring MCP Servers for Claude, Cursor, Antigravity, VS Code, Windsurf...")
     
     venv_py = get_venv_python()
-    mcp_script = WORKSPACE_DIR / "mcp_server.py"
+    mcp_script = WORKSPACE_DIR / "src" / "mcp_server.py"
 
     # 1. Claude Desktop
     claude_paths = []
@@ -262,7 +262,7 @@ def main():
     print(f"  * {Colors.BOLD}Antigravity IDE / Gemini{Colors.ENDC}: Type `/moodle-ai` in chat.")
     print(f"  * {Colors.BOLD}Claude Desktop{Colors.ENDC}: Open Claude (MCP server 'moodle-ai' is pre-configured).")
     print(f"  * {Colors.BOLD}Cursor / Windsurf / Codex{Colors.ENDC}: Open this folder (MCP is auto-configured).")
-    print(f"  * {Colors.BOLD}Terminal / CLI{Colors.ENDC}: Run `python agent_tools.py /sync`")
+    print(f"  * {Colors.BOLD}Terminal / CLI{Colors.ENDC}: Run `python moodle.py /sync`")
     print("\nNext step: Open `.env` to verify your Kerberos ID & password, then run `/sync`!\n")
 
 if __name__ == "__main__":

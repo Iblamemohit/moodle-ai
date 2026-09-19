@@ -2,8 +2,8 @@
 
 ## Quick Start
 - Run universal setup: `python install.py` (or `./install.sh`)
-- Master command: `python agent_tools.py /moodle-ai`
-- Run MCP server: `python mcp_server.py`
+- Master command: `python moodle.py /moodle-ai`
+- Run MCP server: `python src/mcp_server.py`
 
 ## Commands
 - `/moodle-ai`: Master status and interactive command router.

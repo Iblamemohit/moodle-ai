@@ -82,10 +82,10 @@ def render_page_to_image(
     pdf_path: str, 
     page_num: int, 
     cache_dir: Optional[Path] = None, 
-    dpi: int = 150
+    max_dimension: int = 1024
 ) -> Optional[Path]:
     """
-    Renders a single page of a PDF into a high-resolution PNG using PyMuPDF.
+    Renders a single page of a PDF into an optimized PNG capped at max_dimension (e.g. 1024px).
     Caches the image under data/visual_cache/.
     page_num is 1-indexed.
     """
@@ -113,7 +113,16 @@ def render_page_to_image(
             return None
 
         page = doc[page_idx]
-        pix = page.get_pixmap(dpi=dpi)
+        rect = page.rect
+        orig_max = max(rect.width, rect.height)
+        if orig_max > 0:
+            # Scale to cap max dimension at max_dimension (1024px)
+            scale = min(max_dimension / orig_max, 150 / 72.0)
+            mat = pymupdf.Matrix(scale, scale)
+            pix = page.get_pixmap(matrix=mat)
+        else:
+            pix = page.get_pixmap(dpi=96)
+
         pix.save(str(image_path))
         doc.close()
 
@@ -130,11 +139,22 @@ def process_visual_fallback(
     max_pages: int = 2
 ) -> Dict[str, Any]:
     """
-    Processes visual intent and slide visual content for retrieved chunks.
-    If visual intent is detected or candidate slides contain images/drawings,
-    renders the candidate page(s) and returns visual context for the multimodal agent.
+    Processes visual intent for retrieved chunks.
+    STRICT GATING: Slide rendering is ONLY triggered when the user explicitly expresses
+    visual intent (asking for diagrams, charts, graphs, figures, layouts, or visual appearance).
+    This eliminates visual token waste on standard textual/conceptual queries.
     """
     visual_intent = detect_visual_intent(query)
+    
+    # Strict Gating: If user did NOT ask for visual content, skip rendering completely!
+    if not visual_intent:
+        return {
+            "triggered": False,
+            "visual_intent_detected": False,
+            "reason": "no_visual_intent",
+            "rendered_pages": []
+        }
+
     rendered_pages = []
     seen_pages = set()
 
@@ -150,36 +170,29 @@ def process_visual_fallback(
 
         has_img = page_has_visuals(pdf_path, page_num)
 
-        # Trigger if query is visual OR if this slide explicitly contains embedded graphics
-        if visual_intent or has_img:
-            img_path = render_page_to_image(pdf_path, page_num, cache_dir=cache_dir)
-            if img_path:
-                seen_pages.add(page_key)
-                rendered_pages.append({
-                    "course": chunk.get("course", "Unknown"),
-                    "filename": chunk.get("filename", "Unknown"),
-                    "page": page_num,
-                    "pdf_path": pdf_path,
-                    "image_path": str(img_path.resolve()),
-                    "image_url": f"file://{img_path.resolve()}",
-                    "has_embedded_images": has_img,
-                    "citation": chunk.get("citation", "")
-                })
+        # Trigger rendering for the top visual candidate slides
+        img_path = render_page_to_image(pdf_path, page_num, cache_dir=cache_dir, max_dimension=1024)
+        if img_path:
+            seen_pages.add(page_key)
+            rendered_pages.append({
+                "course": chunk.get("course", "Unknown"),
+                "filename": chunk.get("filename", "Unknown"),
+                "page": page_num,
+                "pdf_path": pdf_path,
+                "image_path": str(img_path.resolve()),
+                "image_url": f"file://{img_path.resolve()}",
+                "has_embedded_images": has_img,
+                "citation": chunk.get("citation", "")
+            })
 
         if len(rendered_pages) >= max_pages:
             break
 
     is_triggered = len(rendered_pages) > 0
-    reason = "none"
-    if is_triggered:
-        if visual_intent:
-            reason = "visual_intent_detected"
-        else:
-            reason = "candidate_slide_contains_visuals"
-
     return {
         "triggered": is_triggered,
-        "visual_intent_detected": visual_intent,
-        "reason": reason,
+        "visual_intent_detected": True,
+        "reason": "visual_intent_detected" if is_triggered else "no_renderable_slides",
         "rendered_pages": rendered_pages
     }
+

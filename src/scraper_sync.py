@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Dict, Any, List, Optional
 
 # Import scraper internals
-from scraper import (
+from src.scraper import (
     login,
     getAllCoursesAndSemesters,
     downloadCourse,

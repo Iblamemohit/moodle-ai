@@ -20,6 +20,8 @@ Thumbs.db
 
 # Local scraped downloads, vector embeddings & parsed data
 output/
+output/diagrams/
+scratch/
 data/chroma_db/
 data/parsed/
 data/slides/

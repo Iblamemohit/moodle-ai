@@ -9,6 +9,91 @@ from langchain_text_splitters import Language, RecursiveCharacterTextSplitter
 from rank_bm25 import BM25Okapi
 from src.embeddings import MiniLMEmbeddings
 
+def prune_chunk_text(text: str, query: str, max_chars: int = 450) -> str:
+    """
+    Extracts the most salient, high-density paragraphs and bullet points matching the query,
+    stripping parser noise, duplicate headers, and multi-line blank gaps.
+    """
+    if not text:
+        return ""
+
+    # Collapse excessive newlines and spaces
+    cleaned = re.sub(r"\n{3,}", "\n\n", text.strip())
+    lines = cleaned.split("\n")
+    
+    header_lines = []
+    content_blocks = []
+    curr_block = []
+
+    for line in lines:
+        stripped = line.strip()
+        if not stripped:
+            if curr_block:
+                content_blocks.append("\n".join(curr_block))
+                curr_block = []
+            continue
+        # Check if it's a slide header / markdown title
+        if stripped.startswith(("#", "Slide ", "<!--")):
+            if not header_lines:
+                header_lines.append(stripped)
+            continue
+        curr_block.append(stripped)
+
+    if curr_block:
+        content_blocks.append("\n".join(curr_block))
+
+    # Tokenize query for scoring paragraphs
+    stop_words = {'what', 'is', 'the', 'of', 'in', 'and', 'to', 'a', 'for', 'on', 'how', 'it', 'are', 'as', 'by', 'an', 'be', 'at', 'with', 'or', 'from', 'this', 'that', 'which', 'do', 'does', 'can', 'we', 'i', 'you'}
+    q_tokens = {w.lower() for w in re.findall(r'\w+', query) if len(w) > 1 and w.lower() not in stop_words}
+
+    # Score each content block
+    scored_blocks = []
+    for idx, block in enumerate(content_blocks):
+        b_tokens = {w.lower() for w in re.findall(r'\w+', block) if len(w) > 1}
+        overlap = len(q_tokens.intersection(b_tokens))
+        # Prefer blocks with overlap, or earlier blocks if no overlap
+        score = overlap * 10 - idx
+        scored_blocks.append((score, idx, block))
+
+    # Sort blocks by score descending
+    scored_blocks.sort(key=lambda x: x[0], reverse=True)
+
+    header = "\n".join(header_lines)
+    selected_blocks = []
+    total_len = len(header)
+
+    for score, idx, block in scored_blocks:
+        if total_len + len(block) + 2 <= max_chars or not selected_blocks:
+            selected_blocks.append((idx, block))
+            total_len += len(block) + 2
+        else:
+            remaining = max_chars - total_len - 5
+            if remaining > 80:
+                selected_blocks.append((idx, block[:remaining].rsplit(' ', 1)[0] + "..."))
+            break
+
+    # Restore original document reading order
+    selected_blocks.sort(key=lambda x: x[0])
+    body = "\n\n".join(b[1] for b in selected_blocks)
+
+    if header and body:
+        return f"{header}\n\n{body}"
+    elif body:
+        return body
+    elif header:
+        return header
+    return text[:max_chars]
+
+
+def is_derivation_query(query: str) -> bool:
+    """
+    Detects whether a user query requires complete mathematical derivation context
+    to trigger parent-child window expansion (3 contiguous slide pages).
+    """
+    q_lower = query.lower()
+    return any(k in q_lower for k in ("derivation", "derive", "prove", "proof", "theorem", "show that", "deduce"))
+
+
 class KnowledgeIndexer:
     """
     Lightweight Hybrid Vector + Lexical Search Indexer using SQLite, NumPy, and BM25.
@@ -230,15 +315,28 @@ class KnowledgeIndexer:
                 self.conn.execute("DELETE FROM chunks WHERE source = ?", (str(source_path),))
         except Exception:
             pass
+    def _get_ranker(self):
+        """Lazily initializes the flashrank Ranker."""
+        if not hasattr(self, "_ranker"):
+            self._ranker = None
+            try:
+                from flashrank import Ranker
+                self._ranker = Ranker(model_name="ms-marco-TinyBERT-L-2-v2")
+            except Exception as e:
+                print(f"[Indexer Warning] Flashrank reranker not available, falling back: {e}")
+        return self._ranker
 
-    def hybrid_search(self, query: str, course_filter: Optional[str] = None, filename_filter: Optional[str] = None, top_k: int = 5) -> List[Dict[str, Any]]:
+    def hybrid_search(self, query: str, course_filter: Optional[str] = None, filename_filter: Optional[str] = None, top_k: int = 2, prune_text: bool = True) -> List[Dict[str, Any]]:
         """
         Executes an Ensemble Hybrid Search (Dense Cosine Similarity + BM25 Lexical)
-        combining results with Reciprocal Rank Fusion (RRF).
+        with FlashRank Cross-Encoder Re-ranking and high-density paragraph pruning.
         """
         total_count = self.count()
         if total_count == 0:
             return []
+
+        # Candidate pool size: gather enough candidates for cross-encoder reranking
+        candidate_k = max(top_k * 3, 6)
 
         # 1. Dense Cosine Search via NumPy
         dense_results = []
@@ -269,7 +367,7 @@ class KnowledgeIndexer:
                 sims = matrix @ q_vec
                 
                 # Top dense candidates
-                limit = min(top_k * 3, len(rows))
+                limit = min(candidate_k, len(rows))
                 top_dense_idx = np.argsort(sims)[::-1][:limit]
 
                 for rank_idx, r_idx in enumerate(top_dense_idx):
@@ -330,12 +428,13 @@ class KnowledgeIndexer:
                 "metadata": item["metadata"],
                 "dense_rank": rank,
                 "cosine_similarity": round(item["cosine_similarity"], 4),
-                "bm25_score": 0.0
+                "bm25_score": 0.0,
+                "rerank_score": 0.0
             }
 
         # Rank BM25 Results
         sorted_bm25 = sorted(bm25_scores.items(), key=lambda x: x[1]["score"], reverse=True)
-        for rank, (b_id, data) in enumerate(sorted_bm25[:top_k * 3]):
+        for rank, (b_id, data) in enumerate(sorted_bm25[:candidate_k]):
             rrf_scores[b_id] = rrf_scores.get(b_id, 0.0) + (1.0 / (RRF_K + rank + 1))
             if b_id in doc_store:
                 doc_store[b_id]["bm25_rank"] = rank + 1
@@ -348,29 +447,99 @@ class KnowledgeIndexer:
                     "dense_rank": None,
                     "cosine_similarity": 0.0,
                     "bm25_rank": rank + 1,
-                    "bm25_score": round(data["score"], 4)
+                    "bm25_score": round(data["score"], 4),
+                    "rerank_score": 0.0
                 }
 
-        # Sort combined results by RRF score
-        sorted_results = sorted(rrf_scores.items(), key=lambda x: x[1], reverse=True)
+        # Sort candidates by RRF score
+        sorted_by_rrf = sorted(rrf_scores.items(), key=lambda x: x[1], reverse=True)[:candidate_k]
+
+        # 4. Cross-Encoder Re-ranking via FlashRank
+        ranker = self._get_ranker()
+        if ranker and sorted_by_rrf:
+            try:
+                from flashrank import RerankRequest
+                passages = [{"id": d_id, "text": doc_store[d_id]["text"]} for d_id, _ in sorted_by_rrf]
+                rerank_req = RerankRequest(query=query, passages=passages)
+                rerank_results = ranker.rerank(rerank_req)
+                
+                # Update rerank scores
+                for res_item in rerank_results:
+                    r_id = res_item["id"]
+                    if r_id in doc_store:
+                        doc_store[r_id]["rerank_score"] = round(float(res_item["score"]), 4)
+                
+                # Order by rerank score
+                candidate_ids = [res_item["id"] for res_item in rerank_results]
+            except Exception as ex:
+                print(f"[Indexer Warning] Flashrank rerank failed, using RRF: {ex}")
+                candidate_ids = [d_id for d_id, _ in sorted_by_rrf]
+        else:
+            candidate_ids = [d_id for d_id, _ in sorted_by_rrf]
+
         query_tokens = set(self._tokenize(query))
         
+        # 5. Intent Detection: Derivation Windowing
+        is_derivation = is_derivation_query(query)
+
         final_results = []
-        for d_id, score in sorted_results[:top_k]:
+        for d_id in candidate_ids[:top_k]:
             item = doc_store[d_id]
-            item["rrf_score"] = round(score, 5)
-            
-            # Check how many distinct significant query keywords appear in this document
-            doc_tokens = set(self._tokenize(item["text"]))
+            item["rrf_score"] = round(rrf_scores.get(d_id, 0.0), 5)
+            meta = item["metadata"]
+            source = meta.get("source")
+            page = meta.get("page", 1)
+
+            # Text pruning vs Derivation Window Expansion
+            raw_text = item["text"]
+            item["raw_text"] = raw_text
+
+            if is_derivation and source:
+                # Parent-Child Windowing: Fetch contiguous 3-page window (page - 1, page, page + 1)
+                try:
+                    cursor = self.conn.cursor()
+                    p_start = max(1, page - 1)
+                    p_end = page + 1
+                    contiguous_rows = cursor.execute(
+                        "SELECT page, chunk_index, text FROM chunks WHERE source = ? AND page BETWEEN ? AND ? ORDER BY page ASC, chunk_index ASC",
+                        (source, p_start, p_end)
+                    ).fetchall()
+
+                    if contiguous_rows and len(contiguous_rows) > 1:
+                        windowed_parts = []
+                        current_p = None
+                        for cp, _, ctext in contiguous_rows:
+                            if cp != current_p:
+                                windowed_parts.append(f"\n<!-- Derivation Context: Page {cp} -->\n")
+                                current_p = cp
+                            windowed_parts.append(ctext.strip())
+                        item["text"] = "\n".join(windowed_parts).strip()
+                        item["is_derivation_window"] = True
+                        item["window_pages"] = [p_start, page, p_end]
+                    else:
+                        item["text"] = raw_text
+                except Exception as w_err:
+                    print(f"[Indexer Warning] Windowing failed: {w_err}")
+                    item["text"] = raw_text
+            elif prune_text:
+                item["text"] = prune_chunk_text(raw_text, query, max_chars=450)
+            else:
+                item["text"] = raw_text
+
+            # Check distinct query keywords in doc
+            doc_tokens = set(self._tokenize(raw_text))
             overlap = len(query_tokens.intersection(doc_tokens)) if query_tokens else 0
             overlap_ratio = overlap / len(query_tokens) if query_tokens else 0.0
 
-            # Confident if:
-            # 1. Cosine similarity >= 0.50 (semantic match), OR
-            # 2. At least 50% of the query keywords are found in the doc and BM25 score >= 3.0
-            is_conf = (item["cosine_similarity"] >= 0.50) or (overlap_ratio >= 0.5 and item["bm25_score"] >= 3.0)
+            # Confidence determination:
+            # 1. FlashRank cross-encoder rerank_score >= 0.20, OR
+            # 2. Cosine similarity >= 0.50, OR
+            # 3. Keyword overlap >= 50% and BM25 >= 3.0
+            is_conf = (item["rerank_score"] >= 0.20) or (item["cosine_similarity"] >= 0.50) or (overlap_ratio >= 0.5 and item["bm25_score"] >= 3.0)
             item["is_confident"] = is_conf
             item["keyword_overlap_ratio"] = round(overlap_ratio, 2)
             final_results.append(item)
 
         return final_results
+
+
