@@ -39,11 +39,7 @@ mcp = MCPServer("moodle-ai")
 
 @mcp.tool()
 def moodle_search_and_ask(query: str, doc_filter: Optional[str] = None, course_filter: Optional[str] = None) -> str:
-    """
-    Search downloaded Moodle course lecture slides, notes, handouts, and custom URL sources using Hybrid RAG.
-    Falls back to Wikipedia if the topic is general or out-of-scope.
-    Returns compact, high-density excerpts with exact dual file & markdown citations.
-    """
+    """Hybrid RAG search across course slides, notes, handouts, and custom URLs with dual file & markdown citations."""
     res = moodle_ask(query=query, doc_filter=doc_filter, course_filter=course_filter)
     
     output = []
@@ -83,68 +79,49 @@ def moodle_search_and_ask(query: str, doc_filter: Optional[str] = None, course_f
 
 @mcp.tool()
 def list_available_courses_and_documents(regenerate: bool = False) -> str:
-    """
-    Reads list.md and returns the structured document hierarchy of all downloaded courses, semesters, and custom URL sources.
-    """
+    """Returns the structured document catalog of all downloaded courses and custom sources from list.md."""
     res = moodle_list(regenerate=regenerate)
     return res.get("markdown_content", "No course documents found.")
 
 @mcp.tool()
 def discover_moodle_semesters_list() -> str:
-    """
-    Connects to Moodle and discovers all available semesters/years and courses without downloading.
-    """
+    """Discovers available Moodle semesters, years, and enrolled courses without downloading."""
     res = discover_available_semesters()
     return json.dumps(res, indent=2)
 
 @mcp.tool()
 def trigger_moodle_sync(semester: Optional[str] = None) -> str:
-    """
-    Asynchronously scrapes Moodle, registered custom URLs, and local user_files/ study materials.
-    Converts each file to Markdown and embeds into ChromaDB & BM25 on the fly!
-    Pass semester='user' to sync only local documents from user_files/.
-    """
+    """Scrapes Moodle, custom URLs, or user_files/ and updates vector & BM25 indexes. Pass semester='user' for local files."""
     res = sync_moodle(semester=semester)
     return json.dumps(res, indent=2)
 
 @mcp.tool()
 def add_custom_scrape_url(url: str, label: Optional[str] = None, auto_sync: bool = True) -> str:
-    """
-    Registers a custom web URL or direct PDF link to scrape PDFs from and optionally triggers immediate sync & indexing.
-    """
+    """Registers a custom web URL or PDF to scrape and indexes its contents into the knowledge base."""
     res = moodle_add_custom_url(url=url, label=label, auto_sync=auto_sync)
     return json.dumps(res, indent=2)
 
 @mcp.tool()
 def remove_custom_scrape_url(url_or_label: str, delete_files: bool = False) -> str:
-    """
-    Removes a registered custom URL. Optionally deletes downloaded files.
-    """
+    """Removes a registered custom URL and optionally deletes downloaded files."""
     res = moodle_remove_custom_url(url_or_label=url_or_label, delete_files=delete_files)
     return json.dumps(res, indent=2)
 
 @mcp.tool()
 def list_custom_scrape_urls() -> str:
-    """
-    Lists all registered custom URLs and their sync statuses.
-    """
+    """Lists registered custom URLs and their sync statuses."""
     res = moodle_list_custom_urls()
     return json.dumps(res, indent=2)
 
 @mcp.tool()
 def change_moodle_tracked_semester(target_semester: Optional[str] = None) -> str:
-    """
-    Changes the default tracked semester (e.g. 2601, 2502, 2501, all) in .env and updates list.md.
-    """
+    """Updates the default tracked semester (e.g. 2601, 2502, all) in .env and list.md."""
     res = moodle_change_sync(target_semester=target_semester)
     return json.dumps(res, indent=2)
 
 @mcp.tool()
 def generate_practice_quiz_context(course: Optional[str] = None, num_questions: int = 3) -> str:
-    """
-    Samples foundational concepts and summary slides from course materials to help the LLM generate a practice quiz.
-    Returns dense, high-yield concept summaries with citations.
-    """
+    """Samples foundational course concepts and summary slides to generate practice quiz questions."""
     res = moodle_quiz(course=course, num_questions=num_questions)
     output = [f"### Practice Quiz Topics: {res['course']}"]
     for m in res["materials"]:
@@ -155,29 +132,20 @@ def generate_practice_quiz_context(course: Optional[str] = None, num_questions: 
 
 @mcp.tool()
 def configure_moodle_credentials(user: Optional[str] = None, password: Optional[str] = None) -> str:
-    """
-    Configures or verifies Kerberos credentials in .env.
-    """
+    """Configures or verifies Kerberos credentials in .env."""
     res = setup_moodle(user, password)
     return json.dumps(res, indent=2)
 
 @mcp.tool()
 def update_moodle_ai_version() -> str:
-    """
-    Pulls the latest code updates from the GitHub repository and refreshes Python dependencies in the virtual environment.
-    """
+    """Pulls latest code updates from GitHub and refreshes virtual environment dependencies."""
     res = update_moodle_ai()
     return json.dumps(res, indent=2)
 
 
 @mcp.tool()
 def generate_engineering_diagram(diagram_type: str, params: Optional[str] = None) -> str:
-    """
-    Generate publication-grade 300 DPI engineering diagrams (SFD/BMD for beams, IS 456 stress blocks, or CPM AON network graphs).
-    Never uses ASCII art. Returns image file path, clickable file URL, and embed link.
-    Supported types: 'sfd_bmd', 'is456_stress_block', 'cpm_network'.
-    Optional params: JSON string of parameters (beam length, loads, steel grade, activities, etc.).
-    """
+    """Generates 300 DPI engineering diagrams (sfd_bmd, is456_stress_block, cpm_network); returns embed link."""
     params_dict = None
     if params:
         try:
@@ -202,11 +170,7 @@ def generate_engineering_diagram(diagram_type: str, params: Optional[str] = None
 
 @mcp.tool()
 def deconstruct_past_exam_paper(paper_pdf_path: str, course_code: str, question_num: Optional[int] = None) -> str:
-    """
-    Deconstructs a past-year exam paper (PYQ) PDF.
-    Extracts questions, maps them to relevant course lecture slides and textbook chapters via Hybrid RAG,
-    builds an IIT-style marking scheme outline, and forecasts potential exam variation twists.
-    """
+    """Deconstructs past-year exam PDF into questions, slide citations, marking scheme, and variation forecasts."""
     res = moodle_pyq(paper_pdf_path=paper_pdf_path, course_code=course_code, question_num=question_num)
     if res.get("status") == "success":
         lines = [
@@ -233,11 +197,7 @@ def deconstruct_past_exam_paper(paper_pdf_path: str, course_code: str, question_
 
 @mcp.tool()
 def socratic_problem_drill(course: str, topic: str, current_step: int = 1, user_answer: Optional[str] = None) -> str:
-    """
-    Interactive Socratic problem solver for calculation-heavy engineering topics.
-    Guides the student step-by-step through checkpoint calculations rather than dumping complete answers.
-    Evaluates student intermediate answers, offers hints on mistakes, and unlocks subsequent steps.
-    """
+    """Guides student through interactive calculation drills step-by-step with checkpoint validation."""
     res = moodle_drill(course=course, topic=topic, current_step=current_step, user_answer=user_answer)
     lines = [
         f"### Socratic Problem Drill: {res['drill_topic']} ({res['course']})",
@@ -252,11 +212,7 @@ def socratic_problem_drill(course: str, topic: str, current_step: int = 1, user_
 
 @mcp.tool()
 def generate_course_cheatsheet(course_code: str) -> str:
-    """
-    Compiles an authoritative formula, standard parameter, and IS code provision cheat sheet for a course.
-    Saves the full markdown document to output/cheatsheets/<course_code>_cheatsheet.md.
-    Returns the file link and full markdown reference.
-    """
+    """Compiles formula, parameter, and IS code cheat sheet saved to output/cheatsheets/<course>_cheatsheet.md."""
     res = moodle_cheatsheet(course_code=course_code)
     if res.get("status") == "success":
         return f"Saved cheat sheet to: [{res['title']}]({res['file_url']}) (`{res['file_path']}`)\n\n" + res["markdown_content"]
@@ -265,14 +221,7 @@ def generate_course_cheatsheet(course_code: str) -> str:
 
 @mcp.tool()
 def triage_course_exam_prep(course_code: str) -> str:
-    """
-    High-yield course triage mode for night-before exam preparation.
-    Categorizes topics into:
-    - Tier 1: Guaranteed 60% Weightage (Foundational calculations & core theorems)
-    - Tier 2: High Yield per Hour (Key definitions, mechanisms, derivations)
-    - Tier 3: Low Priority / Skip unless aiming for 10/10 (Historical context, intros)
-    Provides a prioritized 2-hour study checklist with explicit time budgets.
-    """
+    """Prioritizes course topics into Tier 1/2/3 with a 2-hour night-before study checklist."""
     res = moodle_triage(course_code=course_code)
     if res.get("status") == "success":
         lines = [
@@ -296,55 +245,42 @@ def triage_course_exam_prep(course_code: str) -> str:
 
 @mcp.tool()
 def get_student_profile() -> str:
-    """
-    Returns the active semester, upcoming exam countdowns, academic goals, and active study focus areas from memory.md.
-    """
+    """Returns active semester, upcoming exam countdowns, and study focus areas from memory.md."""
     res = get_student_profile_impl()
     return json.dumps(res, indent=2)
 
 
 @mcp.tool()
 def update_student_profile(section: str, update_text: str) -> str:
-    """
-    Proactively logs schedule changes, test scores, or study preferences into memory.md.
-    """
+    """Updates schedule changes, test scores, or study preferences in memory.md."""
     res = update_student_profile_impl(section=section, update_text=update_text)
     return json.dumps(res, indent=2)
 
 
 @mcp.tool()
 def get_next_upcoming_exam() -> str:
-    """
-    Returns the course code, date, syllabus, and countdown for the immediate next exam.
-    """
+    """Returns course code, date, syllabus, and countdown for the immediate next exam."""
     res = get_next_upcoming_exam_impl()
     return json.dumps(res, indent=2)
 
 
 @mcp.tool()
 def record_student_correction(course: str, topic: str, correction: str, reason: str = "") -> str:
-    """
-    Logs a professor-specific rule or student correction permanently into learned_rules.json.
-    These rules are automatically injected into future search contexts so the agent never repeats a mistake.
-    """
+    """Logs professor-specific rules or corrections into learned_rules.json to prevent repeated mistakes."""
     res = record_student_correction_impl(course=course, topic=topic, correction=correction, reason=reason)
     return json.dumps(res, indent=2)
 
 
 @mcp.tool()
 def log_drill_performance(course: str, topic: str, is_correct: bool, mistake_notes: Optional[str] = None) -> str:
-    """
-    Updates concept mastery scores and logs common student calculation mistakes in mastery_tracker.json.
-    """
+    """Updates concept mastery scores and logs mistake summaries in mastery_tracker.json."""
     res = log_drill_performance_impl(course=course, topic=topic, is_correct=is_correct, mistake_notes=mistake_notes)
     return json.dumps(res, indent=2)
 
 
 @mcp.tool()
 def get_student_weaknesses(course: str) -> str:
-    """
-    Returns the top weakest topics and recent mistake history for a course to prioritize revision.
-    """
+    """Returns top weakest topics and recent mistake history for a course to guide targeted revision."""
     res = get_student_weaknesses_impl(course=course)
     return json.dumps(res, indent=2)
 

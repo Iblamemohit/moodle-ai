@@ -43,4 +43,5 @@ user_files/*
 !user_files/.gitkeep
 
 .agents/skills/linkedin-marketing/*
+.claude/skills/linkedin-marketing/*
 skills-lock.json

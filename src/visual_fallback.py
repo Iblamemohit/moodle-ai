@@ -82,10 +82,13 @@ def render_page_to_image(
     pdf_path: str, 
     page_num: int, 
     cache_dir: Optional[Path] = None, 
-    max_dimension: int = 1024
+    max_dimension: int = 600,
+    crop_diagram_bbox: bool = True
 ) -> Optional[Path]:
     """
-    Renders a single page of a PDF into an optimized PNG capped at max_dimension (e.g. 1024px).
+    Renders a single page of a PDF into an optimized PNG capped at max_dimension (default 600px).
+    When crop_diagram_bbox is True and diagrams/drawings are detected, crops directly to the diagram
+    bounding box with 10% padding to eliminate margin whitespace and drastically reduce vision tokens.
     Caches the image under data/visual_cache/.
     page_num is 1-indexed.
     """
@@ -113,15 +116,48 @@ def render_page_to_image(
             return None
 
         page = doc[page_idx]
-        rect = page.rect
-        orig_max = max(rect.width, rect.height)
+
+        clip_rect = None
+        if crop_diagram_bbox:
+            rects = []
+            for d in page.get_drawings():
+                r = d.get("rect")
+                if r and r.is_valid and not r.is_empty:
+                    rects.append(r)
+            for img in page.get_images():
+                try:
+                    for r in page.get_image_rects(img[0]):
+                        if r and r.is_valid and not r.is_empty:
+                            rects.append(r)
+                except Exception:
+                    pass
+
+            if rects:
+                union_rect = rects[0]
+                for r in rects[1:]:
+                    union_rect = union_rect | r
+                pad_x = union_rect.width * 0.10
+                pad_y = union_rect.height * 0.10
+                union_rect = pymupdf.Rect(
+                    max(0, union_rect.x0 - pad_x),
+                    max(0, union_rect.y0 - pad_y),
+                    min(page.rect.width, union_rect.x1 + pad_x),
+                    min(page.rect.height, union_rect.y1 + pad_y)
+                )
+                page_area = page.rect.width * page.rect.height
+                crop_area = union_rect.width * union_rect.height
+                # Only clip if the diagram occupies a meaningful subregion (10% to 92% of page)
+                if 0.10 * page_area <= crop_area <= 0.92 * page_area:
+                    clip_rect = union_rect
+
+        target_rect = clip_rect if clip_rect is not None else page.rect
+        orig_max = max(target_rect.width, target_rect.height)
         if orig_max > 0:
-            # Scale to cap max dimension at max_dimension (1024px)
             scale = min(max_dimension / orig_max, 150 / 72.0)
             mat = pymupdf.Matrix(scale, scale)
-            pix = page.get_pixmap(matrix=mat)
+            pix = page.get_pixmap(matrix=mat, clip=clip_rect)
         else:
-            pix = page.get_pixmap(dpi=96)
+            pix = page.get_pixmap(dpi=96, clip=clip_rect)
 
         pix.save(str(image_path))
         doc.close()

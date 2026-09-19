@@ -255,19 +255,32 @@ class KnowledgeIndexer:
         texts_to_embed = []
         count = 0
 
+        from src.quality_filter import SlideQualityClassifier
+
         for chunk in page_chunks:
             text = chunk.get("text", "").strip()
             if not text:
+                continue
+
+            is_gib, _, _ = SlideQualityClassifier.is_gibberish_text(text)
+            if is_gib:
                 continue
 
             meta = chunk.get("metadata", {})
             sub_chunks = self.text_splitter.split_text(text)
 
             for i, sub_text in enumerate(sub_chunks):
-                chunk_id = f"{meta.get('filename', 'doc')}_p{meta.get('page', 1)}_c{i}_{hash(sub_text) & 0xfffffff}"
+                clean_sub = SlideQualityClassifier.sanitize_markdown_text(sub_text)
+                if not clean_sub:
+                    continue
+                is_sub_gib, _, _ = SlideQualityClassifier.is_gibberish_text(clean_sub)
+                if is_sub_gib:
+                    continue
+
+                chunk_id = f"{meta.get('filename', 'doc')}_p{meta.get('page', 1)}_c{i}_{hash(clean_sub) & 0xfffffff}"
                 chunk_records.append({
                     "id": chunk_id,
-                    "text": sub_text,
+                    "text": clean_sub,
                     "source": str(meta.get("source", "")),
                     "filename": str(meta.get("filename", "")),
                     "course": str(meta.get("course", "")),
@@ -275,7 +288,7 @@ class KnowledgeIndexer:
                     "page": int(meta.get("page", 1)),
                     "chunk_index": i
                 })
-                texts_to_embed.append(sub_text)
+                texts_to_embed.append(clean_sub)
                 count += 1
 
         if chunk_records:

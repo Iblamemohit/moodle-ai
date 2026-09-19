@@ -366,6 +366,20 @@ def moodle_ask(
             "citation": citation
         })
 
+    # Dynamic Top-K Optimization:
+    # If the top match is exceptionally confident (FlashRank rerank_score >= 0.75, or high cosine + confident),
+    # prune lower-ranked chunks to save prompt tokens without sacrificing answer accuracy.
+    if retrieved_chunks:
+        top_c = retrieved_chunks[0]
+        top_rerank = top_c.get("rerank_score", 0.0)
+        top_cosine = top_c.get("cosine_similarity", 0.0)
+        top_is_conf = top_c.get("is_confident", False)
+
+        if top_rerank >= 0.75 or (top_cosine >= 0.65 and top_is_conf):
+            retrieved_chunks = retrieved_chunks[:1]
+        elif len(retrieved_chunks) > 2 and (top_rerank >= 0.50 or top_cosine >= 0.55):
+            retrieved_chunks = retrieved_chunks[:2]
+
     # 2. Check for Page-Level Visual Fallback (Strict Gated)
     visual_fallback = {
         "triggered": False,
@@ -401,13 +415,13 @@ def moodle_ask(
         except Exception as ex:
             print(f"[Wikipedia Fallback Error]: {ex}")
 
-    # Retrieve active learned rules and student learning preferences
+    # Retrieve active learned rules and student learning preferences (filtered by query)
     learned_rules = []
     student_style = "Step-by-step mathematical derivations grounded in course slides, explicit formulas with SI units."
     try:
         from src.self_learner import SelfLearner
         sl = SelfLearner()
-        learned_rules = sl.get_rules_for_context(course=course_filter)
+        learned_rules = sl.get_rules_for_context(course=course_filter, query=query)
     except Exception:
         pass
 

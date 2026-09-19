@@ -191,15 +191,16 @@ class DocumentParser:
                 with open(md_dest, 'r', encoding='utf-8') as f:
                     full_md = f.read()
                 
-                page_sections = re.split(r'<!-- Page \d+ -->', full_md)
+                from src.quality_filter import SlideQualityClassifier
+                page_sections = re.split(r'<!-- Page \d+(?::\s*\[[^\]]+\])?\s*-->', full_md)
                 if len(page_sections) > 1:
                     cached_chunks = []
-                    page_matches = re.findall(r'<!-- Page (\d+) -->', full_md)
+                    page_matches = re.findall(r'<!-- Page (\d+)(?::\s*\[[^\]]+\])?\s*-->', full_md)
                     for i, p_num_str in enumerate(page_matches):
                         p_num = int(p_num_str)
                         if i + 1 < len(page_sections):
                             p_txt = page_sections[i+1].strip().rstrip('-').strip()
-                            if p_txt:
+                            if p_txt and not SlideQualityClassifier.is_gibberish_text(p_txt)[0]:
                                 cached_chunks.append({
                                     'text': p_txt,
                                     'metadata': {
@@ -213,16 +214,18 @@ class DocumentParser:
                     if cached_chunks:
                         return cached_chunks
 
-                return [{
-                    'text': full_md,
-                    'metadata': {
-                        'source': str(filepath),
-                        'filename': filepath.name,
-                        'course': course_name,
-                        'semester': sem_label,
-                        'page': 1
-                    }
-                }]
+                if not SlideQualityClassifier.is_gibberish_text(full_md)[0]:
+                    return [{
+                        'text': full_md,
+                        'metadata': {
+                            'source': str(filepath),
+                            'filename': filepath.name,
+                            'course': course_name,
+                            'semester': sem_label,
+                            'page': 1
+                        }
+                    }]
+                return []
             except Exception:
                 pass
 
@@ -232,13 +235,57 @@ class DocumentParser:
         # 1. PDF Documents
         if ext == '.pdf':
             try:
+                import pymupdf
+                from src.quality_filter import SlideQualityClassifier, QualityAssessment
+                from src.visual_fallback import render_page_to_image
+
+                doc = pymupdf.open(str(filepath))
                 pages_data = pymupdf4llm.to_markdown(str(filepath), page_chunks=True)
                 full_md_list = []
+
+                # First pass: identify repetitive headers/footers across slides
+                line_freq = {}
                 for p in pages_data:
+                    p_txt = p.get('text', '')
+                    for line in p_txt.splitlines():
+                        s_line = line.strip()
+                        if len(s_line) > 10 and not s_line.startswith('|') and not s_line.startswith('#'):
+                            line_freq[s_line] = line_freq.get(s_line, 0) + 1
+
+                boilerplate_lines = {
+                    l for l, count in line_freq.items()
+                    if count >= 5 or (len(pages_data) >= 6 and count >= len(pages_data) * 0.5)
+                }
+
+                for idx, p in enumerate(pages_data):
                     p_text = p.get('text', '').strip()
                     p_meta = p.get('metadata', {})
-                    page_num = p_meta.get('page_number', 1)
-                    if p_text:
+                    page_num = p_meta.get('page_number', idx + 1)
+
+                    # Sanitize formatting noise
+                    p_text = SlideQualityClassifier.sanitize_markdown_text(p_text)
+
+                    # Strip repetitive headers/footers
+                    if boilerplate_lines and p_text:
+                        clean_lines = [l for l in p_text.splitlines() if l.strip() not in boilerplate_lines]
+                        p_text = "\n".join(clean_lines).strip()
+
+                    # Assess quality with PyMuPDF page object
+                    page_obj = doc[idx] if idx < len(doc) else None
+                    if page_obj is not None:
+                        quality = SlideQualityClassifier.assess_page_quality(page_obj, p_text)
+                    else:
+                        is_gib, reason, _ = SlideQualityClassifier.is_gibberish_text(p_text)
+                        quality = QualityAssessment(
+                            is_acceptable=not is_gib,
+                            is_visual_only=is_gib,
+                            reason=reason,
+                            alphanumeric_ratio=0.5,
+                            drawing_count=0,
+                            word_count=len(p_text.split())
+                        )
+
+                    if quality.is_acceptable:
                         chunks.append({
                             'text': p_text,
                             'metadata': {
@@ -249,8 +296,21 @@ class DocumentParser:
                                 'page': page_num
                             }
                         })
-                        full_md_list.append(f'<!-- Page {page_num} -->' + chr(10) + p_text)
-                
+                        full_md_list.append(f'<!-- Page {page_num} -->\n' + p_text)
+                    elif quality.is_visual_only:
+                        # Render to visual cache for multimodal inspection!
+                        try:
+                            render_page_to_image(str(filepath), page_num)
+                        except Exception:
+                            pass
+                        visual_note = f"*Contains visual diagram / schematic / CAD drawing ({quality.reason}). Available via visual inspection.*"
+                        full_md_list.append(f'<!-- Page {page_num}: [Visual Diagram/Drawing] -->\n' + visual_note)
+                        # Notice: We do NOT add gibberish text to chunks! Vector DB remains pristine!
+                    else:
+                        full_md_list.append(f'<!-- Page {page_num}: [Omitted: {quality.reason}] -->')
+
+                doc.close()
+
                 md_dest.parent.mkdir(parents=True, exist_ok=True)
                 with open(md_dest, 'w', encoding='utf-8') as f:
                     f.write((chr(10) + chr(10) + '---' + chr(10) + chr(10)).join(full_md_list))

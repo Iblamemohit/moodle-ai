@@ -177,9 +177,11 @@ class SelfLearner:
 
         return True
 
-    def get_rules_for_context(self, course: Optional[str] = None, topic: Optional[str] = None) -> List[str]:
+    def get_rules_for_context(self, course: Optional[str] = None, topic: Optional[str] = None, query: Optional[str] = None) -> List[str]:
         """
         Returns relevant learned rules formatted for LLM context injection.
+        If query is provided, performs lexical relevance filtering to prevent irrelevant
+        rule injection and reduce prompt token overhead.
         """
         self._ensure_storage_files()
         try:
@@ -195,6 +197,9 @@ class SelfLearner:
 
         t_norm = topic.strip().lower().replace(" ", "_") if topic else None
 
+        # Precompute query terms if query is provided
+        query_words = set(re.findall(r'\b[a-zA-Z0-9_-]{3,}\b', query.lower())) if query else None
+
         matching_rules = []
         for r in data.get("rules", []):
             r_course = r.get("course", "").upper()
@@ -203,11 +208,21 @@ class SelfLearner:
             course_match = (c_norm is None) or (c_norm in r_course) or (r_course in c_norm)
             topic_match = (t_norm is None) or (t_norm in r_topic) or (r_topic in t_norm)
 
-            if course_match and topic_match:
-                formatted = f"⚠️ [Rule for {r['course']} / {r['topic']}]: {r['rule']}"
-                if r.get("reason"):
-                    formatted += f" (Basis: {r['reason']})"
-                matching_rules.append(formatted)
+            if not (course_match and topic_match):
+                continue
+
+            # If query is provided, verify query relevance to avoid token bloating
+            if query_words:
+                rule_text = f"{r.get('rule', '')} {r.get('topic', '')} {r.get('reason', '')}".lower()
+                rule_words = set(re.findall(r'\b[a-zA-Z0-9_-]{3,}\b', rule_text))
+                # If there is no overlap between query and the rule keywords, skip injecting it
+                if not (query_words & rule_words):
+                    continue
+
+            formatted = f"⚠️ [Rule for {r['course']} / {r['topic']}]: {r['rule']}"
+            if r.get("reason"):
+                formatted += f" (Basis: {r['reason']})"
+            matching_rules.append(formatted)
 
         return matching_rules
 
