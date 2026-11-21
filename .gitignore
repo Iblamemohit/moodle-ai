@@ -45,3 +45,13 @@ user_files/*
 .agents/skills/linkedin-marketing/*
 .claude/skills/linkedin-marketing/*
 skills-lock.json
+# Obsidian context bridge
+obsidian.md
+.obsidian/
+
+# Local agent artifacts & state
+.agents/agents/
+.agents/rules/
+.agents/workflows/
+.agents/ecc-install-state.json
+

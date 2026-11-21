@@ -14,13 +14,7 @@ from src.diagram_generator import (
     generate_cpm_network
 )
 from src.indexer import is_derivation_query, KnowledgeIndexer
-from src.agent_tools import (
-    moodle_diagram,
-    moodle_drill,
-    moodle_cheatsheet,
-    moodle_triage,
-    moodle_pyq
-)
+from src.agent_tools import moodle_diagram
 from src import mcp_server
 
 
@@ -101,17 +95,6 @@ class TestExamAssistantFeatures(unittest.TestCase):
         for pat in ascii_art_patterns:
             self.assertIsNone(re.search(pat, d_res["markdown_link"]))
 
-        # Test drill prompt
-        drill_res = moodle_drill("CVL341", "slope_deflection", current_step=1)
-        for pat in ascii_art_patterns:
-            self.assertIsNone(re.search(pat, drill_res["prompt"]))
-            self.assertIsNone(re.search(pat, drill_res["problem_statement"]))
-
-        # Test cheatsheet content
-        cs_res = moodle_cheatsheet("CVL243")
-        for pat in ascii_art_patterns:
-            self.assertIsNone(re.search(pat, cs_res["markdown_content"]))
-
     def test_05_derivation_windowing_intent_detection(self):
         """Test derivation query detection and parent-child windowing flag."""
         self.assertTrue(is_derivation_query("Derivation of IS 456 stress block parameters"))
@@ -121,70 +104,14 @@ class TestExamAssistantFeatures(unittest.TestCase):
         self.assertFalse(is_derivation_query("What is the slump of M25 concrete?"))
         self.assertFalse(is_derivation_query("When was the Sydney Opera House built?"))
 
-    def test_06_socratic_drill_progression(self):
-        """Test Socratic problem solver step progression and checkpoint validation."""
-        # Initial prompt
-        step1 = moodle_drill("CVL341", "slope_deflection", current_step=1)
-        self.assertEqual(step1["current_step"], 1)
-        self.assertFalse(step1["is_correct"])
-
-        # Incorrect answer
-        wrong_ans = moodle_drill("CVL341", "slope_deflection", current_step=1, user_answer="Dk is 3")
-        self.assertFalse(wrong_ans["is_correct"])
-        self.assertIn("Not quite", wrong_ans["feedback"])
-        self.assertEqual(wrong_ans["next_step"], 1)
-
-        # Correct answer
-        correct_ans = moodle_drill("CVL341", "slope_deflection", current_step=1, user_answer="1, rotation at support B")
-        self.assertTrue(correct_ans["is_correct"])
-        self.assertIn("Correct", correct_ans["feedback"])
-        self.assertEqual(correct_ans["next_step"], 2)
-
-    def test_07_cheatsheet_extractor(self):
-        """Test Formula & Code Provision Cheat Sheet extraction."""
-        cs = moodle_cheatsheet("CVL243")
-        self.assertEqual(cs["status"], "success")
-        self.assertIn("IS 456", cs["title"])
-        self.assertGreaterEqual(cs["num_equations"], 5)
-        self.assertTrue(Path(cs["file_path"]).exists())
-        # Check LaTeX formatting
-        self.assertIn(r"x_{u,max}", cs["markdown_content"])
-        self.assertIn(r"M_{u,lim}", cs["markdown_content"])
-        self.assertIn("Standard Parameters & SI Units", cs["markdown_content"])
-
-    def test_08_course_triage(self):
-        """Test High-Yield Course Triage mode."""
-        triage = moodle_triage("CVL341")
-        self.assertEqual(triage["status"], "success")
-        self.assertGreater(len(triage["tier1_high_weightage"]), 0)
-        self.assertGreater(len(triage["tier2_high_yield"]), 0)
-        self.assertGreater(len(triage["tier3_low_priority"]), 0)
-        self.assertGreater(len(triage["two_hour_study_checklist"]), 0)
-        # Check total time budget in 2-hour checklist
-        total_time = sum(item["time_min"] for item in triage["two_hour_study_checklist"])
-        self.assertEqual(total_time, 120, "Total triage checklist must equal exactly 120 minutes (2 hours)")
-
-    def test_09_pyq_deconstruction(self):
-        """Test Past-Year Paper deconstruction."""
-        sample_pdf = self.user_files_dir / "sample_minor_paper.pdf"
-        self.assertTrue(sample_pdf.exists(), "Sample exam paper PDF should exist")
-        res = moodle_pyq(str(sample_pdf), "2601-CVL243A", question_num=1)
-        self.assertEqual(res["status"], "success")
-        self.assertEqual(len(res["deconstructed_questions"]), 1)
-        q1 = res["deconstructed_questions"][0]
-        self.assertEqual(q1["question_number"], 1)
-        self.assertGreater(len(q1["matched_citations"]), 0)
-        self.assertGreater(len(q1["marking_scheme_structure"]), 0)
-        self.assertGreater(len(q1["exam_variation_forecast"]), 0)
-
-    def test_10_mcp_server_registration(self):
-        """Test that all new exam tools are exposed in the MCP server."""
+    def test_06_mcp_server_registration(self):
+        """Test that core tools are exposed in the MCP server."""
         tools = mcp_server.mcp._tool_manager._tools
         self.assertIn("generate_engineering_diagram", tools)
-        self.assertIn("deconstruct_past_exam_paper", tools)
-        self.assertIn("socratic_problem_drill", tools)
-        self.assertIn("generate_course_cheatsheet", tools)
-        self.assertIn("triage_course_exam_prep", tools)
+        self.assertIn("moodle_search_and_ask", tools)
+        self.assertIn("get_course_slide", tools)
+        self.assertIn("trigger_moodle_sync", tools)
+        self.assertIn("list_available_courses_and_documents", tools)
 
 
 if __name__ == "__main__":

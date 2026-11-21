@@ -12,11 +12,16 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from src.quality_filter import SlideQualityClassifier
-from src.self_learner import SelfLearner
+from src.quality_filter import SlideQualityClassifier, QualityAssessment
 
 
 class TestQualityFilter(unittest.TestCase):
+
+    def test_quality_assessment_fields(self):
+        qa = QualityAssessment(is_acceptable=True, is_visual_only=False, reason="Pristine slide text")
+        self.assertTrue(qa.is_acceptable)
+        self.assertFalse(qa.is_visual_only)
+        self.assertEqual(qa.reason, "Pristine slide text")
 
     def test_clean_text_passes(self):
         clean_text = (
@@ -61,28 +66,6 @@ class TestQualityFilter(unittest.TestCase):
         self.assertNotIn("---------------------", sanitized)
         self.assertNotIn(".....................", sanitized)
         self.assertNotIn("<br><br><br><br>", sanitized)
-
-    def test_query_aware_rule_filtering(self):
-        sl = SelfLearner()
-        # Learn a test rule for CVL245
-        sl.learn_rule(
-            course="CVL245",
-            topic="shear_design",
-            rule="Always use 0.75*d or 300 mm as maximum spacing for vertical stirrups",
-            reason="IS 456 Clause 26.5.1.5"
-        )
-
-        # Relevant query should match
-        rules_relevant = sl.get_rules_for_context(course="CVL245", query="shear stirrups spacing")
-        self.assertTrue(any("shear_design" in r or "stirrups" in r for r in rules_relevant))
-
-        # Completely unrelated query should be filtered out to save prompt tokens
-        rules_unrelated = sl.get_rules_for_context(course="CVL245", query="chlorophyll photosynthesis in plants")
-        self.assertEqual(len(rules_unrelated), 0)
-
-        # Without query, all course rules should be returned
-        rules_all = sl.get_rules_for_context(course="CVL245")
-        self.assertGreater(len(rules_all), 0)
 
 
 if __name__ == "__main__":

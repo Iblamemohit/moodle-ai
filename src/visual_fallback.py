@@ -1,7 +1,8 @@
 import os
 import re
+import base64
 from pathlib import Path
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, List, Optional, Union
 import pymupdf
 
 from src.config import WORKSPACE_DIR
@@ -78,34 +79,27 @@ def page_has_visuals(pdf_path: str, page_num: int) -> bool:
     return False
 
 
-def render_page_to_image(
-    pdf_path: str, 
-    page_num: int, 
-    cache_dir: Optional[Path] = None, 
-    max_dimension: int = 600,
-    crop_diagram_bbox: bool = True
+def render_slide(
+    pdf_path: str,
+    page_num: int,
+    cache_dir: Optional[Path] = None,
+    max_dimension: int = 1400,
+    dpi: int = 150,
+    high_res: bool = False,
+    **kwargs
 ) -> Optional[Path]:
-    """
-    Renders a single page of a PDF into an optimized PNG capped at max_dimension (default 600px).
-    When crop_diagram_bbox is True and diagrams/drawings are detected, crops directly to the diagram
-    bounding box with 10% padding to eliminate margin whitespace and drastically reduce vision tokens.
-    Caches the image under data/visual_cache/.
-    page_num is 1-indexed.
-    """
+    """Renders a PDF page to a PNG image cached in data/visual_cache/."""
     try:
         path = Path(pdf_path)
         if not path.exists() or path.suffix.lower() != ".pdf":
             return None
 
-        if cache_dir is None:
-            cache_dir = Path(WORKSPACE_DIR) / "data" / "visual_cache"
+        cache_dir = cache_dir or (Path(WORKSPACE_DIR) / "data" / "visual_cache")
         cache_dir.mkdir(parents=True, exist_ok=True)
 
         safe_name = re.sub(r"[^\w\-.]", "_", path.stem)
-        image_filename = f"{safe_name}_p{page_num}.png"
-        image_path = cache_dir / image_filename
-
-        # Return cached image if it already exists and is not empty
+        suffix = "_300dpi" if high_res else "_full"
+        image_path = cache_dir / f"{safe_name}_p{page_num}{suffix}.png"
         if image_path.exists() and image_path.stat().st_size > 0:
             return image_path
 
@@ -116,56 +110,25 @@ def render_page_to_image(
             return None
 
         page = doc[page_idx]
-
-        clip_rect = None
-        if crop_diagram_bbox:
-            rects = []
-            for d in page.get_drawings():
-                r = d.get("rect")
-                if r and r.is_valid and not r.is_empty:
-                    rects.append(r)
-            for img in page.get_images():
-                try:
-                    for r in page.get_image_rects(img[0]):
-                        if r and r.is_valid and not r.is_empty:
-                            rects.append(r)
-                except Exception:
-                    pass
-
-            if rects:
-                union_rect = rects[0]
-                for r in rects[1:]:
-                    union_rect = union_rect | r
-                pad_x = union_rect.width * 0.10
-                pad_y = union_rect.height * 0.10
-                union_rect = pymupdf.Rect(
-                    max(0, union_rect.x0 - pad_x),
-                    max(0, union_rect.y0 - pad_y),
-                    min(page.rect.width, union_rect.x1 + pad_x),
-                    min(page.rect.height, union_rect.y1 + pad_y)
-                )
-                page_area = page.rect.width * page.rect.height
-                crop_area = union_rect.width * union_rect.height
-                # Only clip if the diagram occupies a meaningful subregion (10% to 92% of page)
-                if 0.10 * page_area <= crop_area <= 0.92 * page_area:
-                    clip_rect = union_rect
-
-        target_rect = clip_rect if clip_rect is not None else page.rect
-        orig_max = max(target_rect.width, target_rect.height)
-        if orig_max > 0:
-            scale = min(max_dimension / orig_max, 150 / 72.0)
-            mat = pymupdf.Matrix(scale, scale)
-            pix = page.get_pixmap(matrix=mat, clip=clip_rect)
+        if high_res:
+            pix = page.get_pixmap(dpi=300)
         else:
-            pix = page.get_pixmap(dpi=96, clip=clip_rect)
+            orig_max = max(page.rect.width, page.rect.height)
+            scale = min(max_dimension / orig_max, dpi / 72.0) if orig_max > 0 else 1.0
+            pix = page.get_pixmap(matrix=pymupdf.Matrix(scale, scale))
 
         pix.save(str(image_path))
         doc.close()
-
+        prune_visual_cache(cache_dir=cache_dir)
         return image_path
     except Exception as ex:
         print(f"[Visual Fallback] Warning: Could not render page {page_num} of {pdf_path}: {ex}")
         return None
+
+
+# Backward-compatible unified aliases
+render_page_to_image = render_slide
+render_full_slide_image = render_slide
 
 
 def process_visual_fallback(
@@ -207,9 +170,10 @@ def process_visual_fallback(
         has_img = page_has_visuals(pdf_path, page_num)
 
         # Trigger rendering for the top visual candidate slides
-        img_path = render_page_to_image(pdf_path, page_num, cache_dir=cache_dir, max_dimension=1024)
+        img_path = render_slide(pdf_path, page_num, cache_dir=cache_dir, max_dimension=1024)
         if img_path:
             seen_pages.add(page_key)
+            b64_data = get_image_base64(img_path)
             rendered_pages.append({
                 "course": chunk.get("course", "Unknown"),
                 "filename": chunk.get("filename", "Unknown"),
@@ -217,6 +181,7 @@ def process_visual_fallback(
                 "pdf_path": pdf_path,
                 "image_path": str(img_path.resolve()),
                 "image_url": f"file://{img_path.resolve()}",
+                "image_base64": b64_data,
                 "has_embedded_images": has_img,
                 "citation": chunk.get("citation", "")
             })
@@ -231,4 +196,47 @@ def process_visual_fallback(
         "reason": "visual_intent_detected" if is_triggered else "no_renderable_slides",
         "rendered_pages": rendered_pages
     }
+
+
+def get_image_base64(image_path: Union[str, Path]) -> Optional[str]:
+    """Reads a local image file and returns its base64-encoded string."""
+    try:
+        p = Path(image_path)
+        if p.exists() and p.is_file() and p.stat().st_size > 0:
+            with open(p, "rb") as f:
+                return base64.b64encode(f.read()).decode("utf-8")
+    except Exception:
+        pass
+    return None
+
+
+
+
+
+def prune_visual_cache(max_files: int = 150, cache_dir: Optional[Path] = None) -> int:
+    """
+    Prunes visual cache directory when file count exceeds max_files.
+    Deletes oldest PNGs first to keep disk footprint bounded.
+    """
+    try:
+        if cache_dir is None:
+            cache_dir = Path(WORKSPACE_DIR) / "data" / "visual_cache"
+        if not cache_dir.exists():
+            return 0
+        png_files = sorted(cache_dir.glob("*.png"), key=lambda p: p.stat().st_mtime)
+        if len(png_files) <= max_files:
+            return 0
+        to_delete = png_files[:len(png_files) - max_files]
+        deleted_count = 0
+        for f in to_delete:
+            try:
+                f.unlink(missing_ok=True)
+                deleted_count += 1
+            except Exception:
+                pass
+        return deleted_count
+    except Exception as ex:
+        print(f"[Visual Cache Prune Warning]: {ex}")
+        return 0
+
 

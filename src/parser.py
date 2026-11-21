@@ -2,7 +2,6 @@ import os
 import re
 import hashlib
 import json
-import zipfile
 import shutil
 import xml.etree.ElementTree as ET
 from pathlib import Path
@@ -87,24 +86,7 @@ def parse_pptx_to_markdown(filepath):
                 full_md_list.append(f'<!-- Page {slide_idx} -->' + chr(10) + slide_text)
 
     except Exception as pptx_err:
-        print(f'[Parser Notice] python-pptx parser fallback triggered for {Path(filepath).name}: {pptx_err}')
-        try:
-            with zipfile.ZipFile(filepath, 'r') as zf:
-                slide_files = sorted(
-                    [f for f in zf.namelist() if f.startswith('ppt/slides/slide') and f.endswith('.xml')],
-                    key=lambda x: int(re.search(r'slide(\d+)\.xml', x).group(1)) if re.search(r'slide(\d+)\.xml', x) else 0
-                )
-                for slide_idx, sf in enumerate(slide_files, start=1):
-                    xml_data = zf.read(sf)
-                    tree = ET.fromstring(xml_data)
-                    texts = [elem.text for elem in tree.iter() if elem.text and elem.tag.endswith('t')]
-                    if texts:
-                        clean_text = chr(10).join([f'- {t.strip()}' for t in texts if t.strip()])
-                        slide_body = f'# Slide {slide_idx}' + chr(10) + chr(10) + clean_text
-                        chunks.append({'page': slide_idx, 'text': slide_body})
-                        full_md_list.append(f'<!-- Page {slide_idx} -->' + chr(10) + slide_body)
-        except Exception as e:
-            print(f'[Parser Error] Failed XML extraction of PPTX {Path(filepath).name}: {e}')
+        print(f'[Parser Error] Failed to parse PPTX {Path(filepath).name}: {pptx_err}')
 
     combined_md = (chr(10) + chr(10) + '---' + chr(10) + chr(10)).join(full_md_list)
     return chunks, combined_md
@@ -114,6 +96,7 @@ def parse_docx_to_markdown(filepath):
     chunks = []
     lines = []
     try:
+        import zipfile
         with zipfile.ZipFile(filepath, 'r') as zf:
             if 'word/document.xml' in zf.namelist():
                 xml_data = zf.read('word/document.xml')
@@ -155,6 +138,24 @@ class DocumentParser:
         with open(self.hash_cache_file, 'w', encoding='utf-8') as f:
             json.dump(self.hashes, f, indent=2)
 
+    def _make_chunk(self, text, filepath, course_name, sem_label, page=1):
+        return {
+            'text': text,
+            'metadata': {
+                'source': str(filepath),
+                'filename': Path(filepath).name,
+                'course': course_name,
+                'semester': sem_label,
+                'page': page
+            }
+        }
+
+    def _save_markdown(self, md_dest, content):
+        if content:
+            md_dest.parent.mkdir(parents=True, exist_ok=True)
+            with open(md_dest, 'w', encoding='utf-8') as f:
+                f.write(content)
+
     def parse_file(self, filepath, force=False):
         filepath = Path(filepath).resolve()
         if not filepath.exists() or filepath.name.startswith('.'):
@@ -165,12 +166,7 @@ class DocumentParser:
             sub_rel = filepath.relative_to(self.user_files_dir)
             rel_path = Path("User_Files") / sub_rel
             sem_label = "User_Files"
-            # If user organized by subfolder (e.g. user_files/COL106/slide.pdf) -> course is COL106
-            # If placed directly in user_files/ (e.g. user_files/slide.pdf) -> course is General
-            if len(sub_rel.parts) > 1:
-                course_name = sub_rel.parts[0]
-            else:
-                course_name = "General"
+            course_name = sub_rel.parts[0] if len(sub_rel.parts) > 1 else "General"
         else:
             try:
                 rel_path = filepath.relative_to(self.output_dir)
@@ -184,47 +180,27 @@ class DocumentParser:
         curr_hash = compute_file_hash(filepath)
         cached_hash = self.hashes.get(str(rel_path))
 
-        # Check if already up-to-date
+        # Check if already up-to-date (Anti-cache penalty eliminated: return immediately without re-checking gibberish)
         md_dest = self.parsed_dir / rel_path.with_suffix('.md')
         if not force and cached_hash == curr_hash and md_dest.exists():
             try:
                 with open(md_dest, 'r', encoding='utf-8') as f:
                     full_md = f.read()
-                
-                from src.quality_filter import SlideQualityClassifier
+
                 page_sections = re.split(r'<!-- Page \d+(?::\s*\[[^\]]+\])?\s*-->', full_md)
                 if len(page_sections) > 1:
                     cached_chunks = []
                     page_matches = re.findall(r'<!-- Page (\d+)(?::\s*\[[^\]]+\])?\s*-->', full_md)
                     for i, p_num_str in enumerate(page_matches):
-                        p_num = int(p_num_str)
                         if i + 1 < len(page_sections):
                             p_txt = page_sections[i+1].strip().rstrip('-').strip()
-                            if p_txt and not SlideQualityClassifier.is_gibberish_text(p_txt)[0]:
-                                cached_chunks.append({
-                                    'text': p_txt,
-                                    'metadata': {
-                                        'source': str(filepath),
-                                        'filename': filepath.name,
-                                        'course': course_name,
-                                        'semester': sem_label,
-                                        'page': p_num
-                                    }
-                                })
+                            if p_txt:
+                                cached_chunks.append(self._make_chunk(p_txt, filepath, course_name, sem_label, int(p_num_str)))
                     if cached_chunks:
                         return cached_chunks
 
-                if not SlideQualityClassifier.is_gibberish_text(full_md)[0]:
-                    return [{
-                        'text': full_md,
-                        'metadata': {
-                            'source': str(filepath),
-                            'filename': filepath.name,
-                            'course': course_name,
-                            'semester': sem_label,
-                            'page': 1
-                        }
-                    }]
+                if full_md.strip():
+                    return [self._make_chunk(full_md.strip(), filepath, course_name, sem_label, 1)]
                 return []
             except Exception:
                 pass
@@ -286,35 +262,22 @@ class DocumentParser:
                         )
 
                     if quality.is_acceptable:
-                        chunks.append({
-                            'text': p_text,
-                            'metadata': {
-                                'source': str(filepath),
-                                'filename': filepath.name,
-                                'course': course_name,
-                                'semester': sem_label,
-                                'page': page_num
-                            }
-                        })
+                        chunks.append(self._make_chunk(p_text, filepath, course_name, sem_label, page_num))
                         full_md_list.append(f'<!-- Page {page_num} -->\n' + p_text)
                     elif quality.is_visual_only:
-                        # Render to visual cache for multimodal inspection!
                         try:
                             render_page_to_image(str(filepath), page_num)
                         except Exception:
                             pass
                         visual_note = f"*Contains visual diagram / schematic / CAD drawing ({quality.reason}). Available via visual inspection.*"
                         full_md_list.append(f'<!-- Page {page_num}: [Visual Diagram/Drawing] -->\n' + visual_note)
-                        # Notice: We do NOT add gibberish text to chunks! Vector DB remains pristine!
                     else:
                         full_md_list.append(f'<!-- Page {page_num}: [Omitted: {quality.reason}] -->')
 
                 doc.close()
+                combined_md = (chr(10) + chr(10) + '---' + chr(10) + chr(10)).join(full_md_list)
+                self._save_markdown(md_dest, combined_md)
 
-                md_dest.parent.mkdir(parents=True, exist_ok=True)
-                with open(md_dest, 'w', encoding='utf-8') as f:
-                    f.write((chr(10) + chr(10) + '---' + chr(10) + chr(10)).join(full_md_list))
-                
             except Exception as e:
                 print(f'[Parser Error] Failed to parse PDF {filepath.name}: {e}')
                 return []
@@ -324,20 +287,8 @@ class DocumentParser:
             try:
                 raw_chunks, combined_md = parse_pptx_to_markdown(filepath)
                 for ch in raw_chunks:
-                    chunks.append({
-                        'text': ch['text'],
-                        'metadata': {
-                            'source': str(filepath),
-                            'filename': filepath.name,
-                            'course': course_name,
-                            'semester': sem_label,
-                            'page': ch['page']
-                        }
-                    })
-                if combined_md:
-                    md_dest.parent.mkdir(parents=True, exist_ok=True)
-                    with open(md_dest, 'w', encoding='utf-8') as f:
-                        f.write(combined_md)
+                    chunks.append(self._make_chunk(ch['text'], filepath, course_name, sem_label, ch['page']))
+                self._save_markdown(md_dest, combined_md)
             except Exception as e:
                 print(f'[Parser Error] Failed to parse presentation {filepath.name}: {e}')
                 return []
@@ -347,20 +298,8 @@ class DocumentParser:
             try:
                 raw_chunks, combined_md = parse_docx_to_markdown(filepath)
                 for ch in raw_chunks:
-                    chunks.append({
-                        'text': ch['text'],
-                        'metadata': {
-                            'source': str(filepath),
-                            'filename': filepath.name,
-                            'course': course_name,
-                            'semester': sem_label,
-                            'page': ch['page']
-                        }
-                    })
-                if combined_md:
-                    md_dest.parent.mkdir(parents=True, exist_ok=True)
-                    with open(md_dest, 'w', encoding='utf-8') as f:
-                        f.write(combined_md)
+                    chunks.append(self._make_chunk(ch['text'], filepath, course_name, sem_label, ch['page']))
+                self._save_markdown(md_dest, combined_md)
             except Exception as e:
                 print(f'[Parser Error] Failed to parse DOCX {filepath.name}: {e}')
                 return []
@@ -370,19 +309,9 @@ class DocumentParser:
             try:
                 extract_dir = filepath.parent / filepath.stem
                 if not extract_dir.exists():
-                    with zipfile.ZipFile(filepath, 'r') as zf:
-                        for member in zf.infolist():
-                            dest_file = (extract_dir / member.filename).resolve()
-                            if not str(dest_file).startswith(str(extract_dir.resolve())):
-                                continue
-                            if member.is_dir():
-                                dest_file.mkdir(parents=True, exist_ok=True)
-                                continue
-                            dest_file.parent.mkdir(parents=True, exist_ok=True)
-                            with zf.open(member) as source, open(dest_file, 'wb') as target:
-                                shutil.copyfileobj(source, target)
-                
-                zip_md_sections = [f'# Archive: {filepath.name}' + chr(10)]
+                    shutil.unpack_archive(str(filepath), str(extract_dir))
+
+                zip_md_sections = [f'# Archive: {filepath.name}\n']
                 for sub_root, _, sub_files in os.walk(extract_dir):
                     for sub_f in sorted(sub_files):
                         if sub_f.startswith('.'):
@@ -391,13 +320,11 @@ class DocumentParser:
                         sub_chunks = self.parse_file(sub_path, force=force)
                         for sc in sub_chunks:
                             chunks.append(sc)
-                            zip_md_sections.append(f'## File: {sub_f}' + chr(10) + chr(10) + sc['text'])
-                
+                            zip_md_sections.append(f'## File: {sub_f}\n\n' + sc['text'])
+
                 if zip_md_sections:
-                    combined_md = (chr(10) + chr(10) + '---' + chr(10) + chr(10)).join(zip_md_sections)
-                    md_dest.parent.mkdir(parents=True, exist_ok=True)
-                    with open(md_dest, 'w', encoding='utf-8') as f:
-                        f.write(combined_md)
+                    combined_md = '\n\n---\n\n'.join(zip_md_sections)
+                    self._save_markdown(md_dest, combined_md)
             except Exception as e:
                 print(f'[Parser Error] Failed to parse ZIP archive {filepath.name}: {e}')
                 return []
@@ -408,19 +335,8 @@ class DocumentParser:
                 with open(filepath, 'r', encoding='utf-8', errors='ignore') as f:
                     text = f.read().strip()
                 if text:
-                    chunks.append({
-                        'text': text,
-                        'metadata': {
-                            'source': str(filepath),
-                            'filename': filepath.name,
-                            'course': course_name,
-                            'semester': sem_label,
-                            'page': 1
-                        }
-                    })
-                    md_dest.parent.mkdir(parents=True, exist_ok=True)
-                    with open(md_dest, 'w', encoding='utf-8') as f:
-                        f.write(text)
+                    chunks.append(self._make_chunk(text, filepath, course_name, sem_label, 1))
+                    self._save_markdown(md_dest, text)
             except Exception as e:
                 print(f'[Parser Error] Failed to parse text file {filepath.name}: {e}')
                 return []
@@ -434,19 +350,8 @@ class DocumentParser:
                     s.extract()
                 text = soup.get_text(separator=chr(10)).strip()
                 if text:
-                    chunks.append({
-                        'text': text,
-                        'metadata': {
-                            'source': str(filepath),
-                            'filename': filepath.name,
-                            'course': course_name,
-                            'semester': sem_label,
-                            'page': 1
-                        }
-                    })
-                    md_dest.parent.mkdir(parents=True, exist_ok=True)
-                    with open(md_dest, 'w', encoding='utf-8') as f:
-                        f.write(text)
+                    chunks.append(self._make_chunk(text, filepath, course_name, sem_label, 1))
+                    self._save_markdown(md_dest, text)
             except Exception as e:
                 print(f'[Parser Error] Failed to parse HTML {filepath.name}: {e}')
                 return []
@@ -460,7 +365,7 @@ class DocumentParser:
     def parse_all(self, force=False):
         all_chunks = []
         supported_exts = {'.pdf', '.pptx', '.ppt', '.docx', '.zip', '.txt', '.md', '.html', '.htm'}
-        
+
         target_dirs = [self.output_dir]
         if self.user_files_dir and self.user_files_dir.exists():
             target_dirs.append(self.user_files_dir)

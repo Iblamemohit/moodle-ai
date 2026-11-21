@@ -4,7 +4,7 @@ This repository contains an academic study assistant, streaming Moodle scraper, 
 
 ## Architecture & Core Components
 
-1. **Scraper Pipeline (`scraper.py` & `src/scraper_sync.py`)**:
+1. **Scraper Pipeline (`src/scraper.py`)**:
    - Downloads course slides and materials from Moodle.
    - Synchronizes external custom URLs via `src/custom_scraper.py`.
    - Ingests personal student documents, textbooks, and notes from `user_files/`.
@@ -21,10 +21,6 @@ This repository contains an academic study assistant, streaming Moodle scraper, 
    - MCP 2.x standard server exposing tools (`moodle-ai`) to Claude Desktop, Cursor, Antigravity, and Codex.
 7. **Page-Level Visual Fallback (`src/visual_fallback.py`)**:
    - Detects visual queries and renders candidate PDF slide pages to crisp PNGs (`page.get_pixmap()`) cached in `data/visual_cache/` for multimodal LLMs to inspect diagrams and charts.
-8. **Native Memory Engine (`src/memory_manager.py`)**:
-   - Programmatically tracks academic profile, upcoming exam schedules, course diagnostics, and learning preferences in `memory.md`.
-9. **Self-Learning Engine (`src/self_learner.py`)**:
-   - Continuous feedback system tracking concept mastery, logging student corrections (`data/learned_rules.json`), and boosting retrieval.
 
 ## Critical Rule: Strict Ban on ASCII Art Diagrams
 - **NEVER** output engineering diagrams, structural diagrams (SFD/BMD), beam deflections, IS 456 stress blocks, CPM networks, or biological pathways using monospace text, slashes (`/`, `\`), pipes (`|`), or underscores (`_`).
@@ -50,20 +46,19 @@ You are a study helping agent and a teacher. The 5 core qualities of great teach
 All commands are executed via `python moodle.py`:
 - `python moodle.py /moodle-ai`: Master status & help dispatcher.
 - `python moodle.py /setup`: Initialize or verify `.env` credentials.
-- `python moodle.py /sync [semester_code | user]`: Stream download, markdown conversion, and vector indexing. Use `/sync user` to index only local `user_files/`.
+- `python moodle.py /sync [semester_code | user] [--course <course>] [--quick]`: Stream download, markdown conversion, and vector indexing. Use `--quick` for sub-2s incremental check.
+- `python moodle.py /slide <course_code> <document_name> <page_number> [--raw]`: Precision slide extraction with Markdown text and rendered PNG (150 DPI default, 300 DPI raw with `--raw`).
 - `python moodle.py /add-custom-url "<URL>" [label]`: Scrape and index external course website or direct PDF.
 - `python moodle.py /remove-custom-url "<URL_OR_LABEL>" [--delete-files]`: Remove custom source.
 - `python moodle.py /list-custom-urls`: List registered external sources.
 - `python moodle.py /list [--regen]`: Output document catalog and structure.
-- `python moodle.py /ask "<query>"`: Hybrid search with citations and Wikipedia fallback.
+- `python moodle.py /ask "<query>"`: Hybrid search with citations and visual fallback.
 - `python moodle.py /quiz [course_code]`: Retrieve foundational concepts for practice exams.
 - `python moodle.py /diagram <type> [params_json]`: Generate publication-grade 300 DPI diagram (`sfd_bmd`, `is456_stress_block`, `cpm_network`).
-- `python moodle.py /pyq <paper_pdf_path> <course_code> [question_num]`: Past-year exam paper deconstruction with slide citations, IIT-style marking scheme, and exam variation forecasts.
-- `python moodle.py /drill <course> <topic> [--step N] [--answer "<ans>"]`: Interactive Socratic problem solver with checkpoint calculation validation.
-- `python moodle.py /cheatsheet <course_code>`: Compile formula, SI units, and IS code provision cheat sheet to `output/cheatsheets/<course>_cheatsheet.md`.
-- `python moodle.py /triage <course_code>`: High-yield course triage (Tier 1/2/3) with a 2-hour night-before study checklist.
 - `python moodle.py /update-version`: Pull latest updates from GitHub and refresh `.venv` dependencies.
 - `python install.py`: Universal 1-click auto-configuration.
+
+The LLM performs tutoring, Socratic drills, formula cheatsheets, exam triage, and past-year paper solutions dynamically in the chat by querying `/ask` and `/slide`.
 
 ## Citation Standards
 When answering questions based on course materials, cite using dual links (Source file link + Markdown link):

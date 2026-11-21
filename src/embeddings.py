@@ -41,12 +41,10 @@ class MiniLMEmbeddings:
         print("[Embeddings] [INFO] Downloading lightweight all-MiniLM-L6-v2 model (~80MB)...")
         urllib.request.urlretrieve(MODEL_DOWNLOAD_URL, archive_path)
 
-        # Verify hash
-        sha = hashlib.sha256()
+        # Verify hash using stdlib file_digest
         with open(archive_path, "rb") as f:
-            while chunk := f.read(65536):
-                sha.update(chunk)
-        if sha.hexdigest() != MODEL_SHA256:
+            digest = hashlib.file_digest(f, "sha256").hexdigest()
+        if digest != MODEL_SHA256:
             archive_path.unlink(missing_ok=True)
             raise ValueError("Downloaded model archive failed SHA256 checksum verification.")
 
@@ -98,7 +96,7 @@ class MiniLMEmbeddings:
         all_embs = []
         for i in range(0, len(documents), batch_size):
             batch = documents[i : i + batch_size]
-            encoded = [self.tokenizer.encode(d) for d in batch]
+            encoded = self.tokenizer.encode_batch(batch)
 
             input_ids = np.array([e.ids for e in encoded], dtype=np.int64)
             attention_mask = np.array([e.attention_mask for e in encoded], dtype=np.int64)

@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
 import os
 import sys
-import itertools
 import re
-import datetime
-import configparser
 import urllib.request
 import urllib.parse
+import concurrent.futures
+import threading
+from pathlib import Path
+from typing import Dict, Any, List, Optional
 from requests import session
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
@@ -14,6 +15,10 @@ from bs4 import BeautifulSoup
 
 # read config from .env
 from src.config import get_config
+from src.parser import DocumentParser, compute_file_hash
+from src.indexer import KnowledgeIndexer
+from src.list_manager import ListManager
+from src.custom_scraper import CustomUrlManager, scrape_custom_source
 
 # Reconfigure console streams on Windows
 if sys.platform == "win32":
@@ -30,9 +35,6 @@ username = cfg.get("user", "")
 password = cfg.get("password", "")
 root = cfg.get("output_dir", "output")
 baseurls = cfg.get("baseurls", ["https://moodle.iitd.ac.in/", "https://moodlenew.iitd.ac.in/"])
-
-sections = itertools.count()
-files = itertools.count()
 
 def sanitize_name(name: str) -> str:
     """Sanitizes a single file or directory component without altering drive letters or full paths."""
@@ -61,7 +63,6 @@ def realign_lecture_filename(filename: str, activity_name: str = None) -> str:
                 base, ext = os.path.splitext(filename)
                 if not ext:
                     ext = '.pdf'
-                # Preserve leading zero padding if the original filename used it (e.g. Lec07 -> Lec06)
                 orig_num_str = file_m.group(1)
                 num_str = str(act_num)
                 if len(orig_num_str) > len(num_str):
@@ -74,14 +75,31 @@ def realign_lecture_filename(filename: str, activity_name: str = None) -> str:
     return filename
 
 
-class colors:
-    HEADER = '\033[95m'
-    OKBLUE = '\033[94m'
-    OKGREEN = '\033[92m'
-    WARNING = '\033[93m'
-    FAIL = '\033[91m'
-    ENDC = '\033[0m'
-    BOLD = '\033[1m'
+class _ColorsMeta(type):
+    """Dynamic ANSI color dispatcher: full colors for human terminal, stripped for MCP / pipes."""
+    @property
+    def HEADER(cls): return '\033[95m' if cls._is_enabled() else ''
+    @property
+    def OKBLUE(cls): return '\033[94m' if cls._is_enabled() else ''
+    @property
+    def OKGREEN(cls): return '\033[92m' if cls._is_enabled() else ''
+    @property
+    def WARNING(cls): return '\033[93m' if cls._is_enabled() else ''
+    @property
+    def FAIL(cls): return '\033[91m' if cls._is_enabled() else ''
+    @property
+    def ENDC(cls): return '\033[0m' if cls._is_enabled() else ''
+    @property
+    def BOLD(cls): return '\033[1m' if cls._is_enabled() else ''
+
+    def _is_enabled(cls):
+        if os.environ.get("MCP_MODE") == "1" or os.environ.get("NO_COLOR"):
+            return False
+        return sys.stdout.isatty()
+
+
+class colors(metaclass=_ColorsMeta):
+    pass
 
 
 def solve_captcha(text):
@@ -103,8 +121,6 @@ def solve_captcha(text):
 
 def login(baseurl, user, pwd):
     ses = session()
-    
-    # Configure connection pooling and retries for performance and stability
     retries = Retry(total=3, backoff_factor=0.3, status_forcelist=[500, 502, 503, 504])
     adapter = HTTPAdapter(pool_connections=20, pool_maxsize=20, max_retries=retries)
     ses.mount('http://', adapter)
@@ -122,13 +138,11 @@ def login(baseurl, user, pwd):
         return None
 
     soup = BeautifulSoup(r.text, 'html.parser')
-    
     authdata = {
         'username': user,
         'password': pwd
     }
     
-    # Collect form inputs & CSRF tokens if any (e.g. logintoken)
     form = soup.find('form', id='login') or soup.find('form')
     if form:
         for inp in form.find_all('input'):
@@ -136,7 +150,6 @@ def login(baseurl, user, pwd):
             if name and name not in authdata:
                 authdata[name] = inp.get('value', '')
         
-        # Check for captcha in form text (e.g. classic IIT Delhi Moodle)
         form_text = form.get_text(' ')
         captcha_ans = solve_captcha(form_text)
         if captcha_ans:
@@ -168,13 +181,36 @@ def _get_courses_for_instance(baseurl, ses):
     netloc = urllib.parse.urlparse(baseurl).netloc
     site_tag = netloc.split('.')[0]  # e.g. moodle or moodlenew
 
+    def _record_course(cid, fullname, shortname="", viewurl=None):
+        cid = str(cid).strip()
+        if not cid:
+            return
+        c_unique_key = f"{site_tag}_{cid}"
+        if c_unique_key in courses_dict:
+            return
+        key = shortname or (fullname.split()[0] if fullname else f'Course_{cid}')
+        sem = 'General'
+        m = re.match(r'^(\d{4})[-_]', key) or re.match(r'^(\d{4})[-_]', fullname)
+        if m:
+            sem = m.group(1)
+        disp = f"{key}: {fullname}" if shortname and shortname != fullname else (fullname or key)
+        courses_dict[c_unique_key] = {
+            'url': viewurl or f'{baseurl}course/view.php?id={cid}',
+            'name': disp,
+            'key': key,
+            'sem': sem,
+            'type': 'Course',
+            'baseurl': baseurl,
+            'session': ses,
+            'site_tag': site_tag
+        }
+
     # 1. Try Moodle 4.x AJAX WebService
     try:
         my_page = ses.get(baseurl + 'my/', timeout=10)
         sesskey_m = re.search(r'\"sesskey\":\s*\"([^\"]+)\"', my_page.text) or re.search(r'sesskey=([a-zA-Z0-9]+)', my_page.text)
         if sesskey_m:
-            sesskey = sesskey_m.group(1)
-            ajax_url = f'{baseurl}lib/ajax/service.php?sesskey={sesskey}&info=core_course_get_enrolled_courses_by_timeline_classification'
+            ajax_url = f'{baseurl}lib/ajax/service.php?sesskey={sesskey_m.group(1)}&info=core_course_get_enrolled_courses_by_timeline_classification'
             payload = [{
                 'index': 0,
                 'methodname': 'core_course_get_enrolled_courses_by_timeline_classification',
@@ -191,30 +227,8 @@ def _get_courses_for_instance(baseurl, ses):
             if ajax_resp.status_code == 200:
                 data = ajax_resp.json()
                 if isinstance(data, list) and len(data) > 0:
-                    courses = data[0].get('data', {}).get('courses', [])
-                    for c in courses:
-                        cid = str(c.get('id'))
-                        fullname = c.get('fullname', '')
-                        shortname = c.get('shortname', '')
-                        viewurl = c.get('viewurl') or f'{baseurl}course/view.php?id={cid}'
-                        
-                        key = shortname if shortname else (fullname.split()[0] if fullname else f'Course_{cid}')
-                        sem = 'General'
-                        prefix_match = re.match(r'^(\d{4})[-_]', key) or re.match(r'^(\d{4})[-_]', fullname)
-                        if prefix_match:
-                            sem = prefix_match.group(1)
-
-                        display_name = f"{key}: {fullname}" if shortname and shortname != fullname else (fullname or key)
-                        courses_dict[f"{site_tag}_{cid}"] = {
-                            'url': viewurl,
-                            'name': display_name,
-                            'key': key,
-                            'sem': sem,
-                            'type': 'Course',
-                            'baseurl': baseurl,
-                            'session': ses,
-                            'site_tag': site_tag
-                        }
+                    for c in data[0].get('data', {}).get('courses', []):
+                        _record_course(c.get('id'), c.get('fullname', ''), c.get('shortname', ''), c.get('viewurl'))
     except Exception:
         pass
 
@@ -225,30 +239,12 @@ def _get_courses_for_instance(baseurl, ses):
             if prof_resp.status_code == 200:
                 psoup = BeautifulSoup(prof_resp.text, 'html.parser')
                 for a in psoup.find_all('a', href=lambda h: h and ('course=' in h or '/course/view.php?id=' in h)):
-                    url = a.get('href')
                     text = a.get_text().strip()
                     if not text or text.lower() in ('view course', 'course', 'edit profile'):
                         continue
-                    m = re.search(r'(?:course=|id=)(\d+)', url)
+                    m = re.search(r'(?:course=|id=)(\d+)', a.get('href', ''))
                     if m:
-                        cid = m.group(1)
-                        c_unique_key = f"{site_tag}_{cid}"
-                        if c_unique_key not in courses_dict:
-                            key = text.split()[0] if text else f"Course_{cid}"
-                            sem = "General"
-                            prefix_match = re.match(r'^(\d{4})[-_]', key)
-                            if prefix_match:
-                                sem = prefix_match.group(1)
-                            courses_dict[c_unique_key] = {
-                                'url': f'{baseurl}course/view.php?id={cid}',
-                                'name': text,
-                                'key': key,
-                                'sem': sem,
-                                'type': 'Course',
-                                'baseurl': baseurl,
-                                'session': ses,
-                                'site_tag': site_tag
-                            }
+                        _record_course(m.group(1), text)
         except Exception:
             pass
 
@@ -260,31 +256,12 @@ def _get_courses_for_instance(baseurl, ses):
                 if r.status_code == 200:
                     soup = BeautifulSoup(r.text, 'html.parser')
                     for a in soup.find_all('a', href=lambda h: h and '/course/view.php?id=' in h):
-                        url = a.get('href')
                         text = a.get_text().strip()
                         if not text or text.lower() in ('view course', 'course'):
                             continue
-                        m = re.search(r'id=(\d+)', url)
+                        m = re.search(r'id=(\d+)', a.get('href', ''))
                         if m:
-                            cid = m.group(1)
-                            c_unique_key = f"{site_tag}_{cid}"
-                            if c_unique_key not in courses_dict:
-                                parts = text.split()
-                                key = parts[0] if parts else f"Course_{cid}"
-                                sem = "General"
-                                prefix_match = re.match(r'^(\d{4})[-_]', key)
-                                if prefix_match:
-                                    sem = prefix_match.group(1)
-                                courses_dict[c_unique_key] = {
-                                    'url': url,
-                                    'name': text,
-                                    'key': key,
-                                    'sem': sem,
-                                    'type': 'Course',
-                                    'baseurl': baseurl,
-                                    'session': ses,
-                                    'site_tag': site_tag
-                                }
+                            _record_course(m.group(1), text, viewurl=a.get('href'))
             except Exception:
                 pass
 
@@ -348,174 +325,87 @@ def extract_zip(zip_path, extract_dir, on_file_saved=None):
     return extracted_files
 
 
+def _stream_to_file(r, dst, on_file_saved=None):
+    """Unified helper: streams HTTP response chunks directly to dst and triggers optional callbacks/unzipping."""
+    os.makedirs(os.path.dirname(dst), exist_ok=True)
+    with open(dst, 'wb') as handle:
+        for block in r.iter_content(65536):
+            if block:
+                handle.write(block)
+    if on_file_saved:
+        try:
+            on_file_saved(dst, is_new=True)
+        except Exception:
+            pass
+    if dst.lower().endswith('.zip'):
+        extract_dir = os.path.splitext(dst)[0]
+        extract_zip(dst, extract_dir, on_file_saved=on_file_saved)
+
+
+def _skip_existing_file(dst, on_file_saved=None):
+    """Handles skipped files by triggering callbacks and ensuring zips are extracted."""
+    if on_file_saved:
+        try:
+            on_file_saved(dst, is_new=False)
+        except Exception:
+            pass
+    if dst.lower().endswith('.zip'):
+        extract_dir = os.path.splitext(dst)[0]
+        if not os.path.exists(extract_dir) or not os.listdir(extract_dir):
+            extract_zip(dst, extract_dir, on_file_saved=on_file_saved)
+
+
 def saveFile(session_obj, src, path, name, on_file_saved=None):
-    global files
-    next(files)
     safe_name = sanitize_name(name)
     dst = os.path.join(path, safe_name)
 
     if os.path.exists(dst) and os.path.getsize(dst) > 0:
         print('[' + colors.OKBLUE + 'skip' + colors.ENDC + '] |  |  +--%s' % safe_name)
-        if on_file_saved:
-            try:
-                on_file_saved(dst, is_new=False)
-            except Exception:
-                pass
-        if dst.lower().endswith('.zip'):
-            extract_dir = os.path.splitext(dst)[0]
-            if not os.path.exists(extract_dir) or not os.listdir(extract_dir):
-                extract_zip(dst, extract_dir, on_file_saved=on_file_saved)
+        _skip_existing_file(dst, on_file_saved=on_file_saved)
         return
 
     try:
-        os.makedirs(os.path.dirname(dst), exist_ok=True)
-        with open(dst, 'wb') as handle:
-            print('[' + colors.OKGREEN + 'save' + colors.ENDC + '] |  |  +--%s' % safe_name)
-            r = session_obj.get(src, stream=True, allow_redirects=True)
-            for block in r.iter_content(65536):
-                if not block:
-                    break
-                handle.write(block)
-        if on_file_saved:
-            try:
-                on_file_saved(dst, is_new=True)
-            except Exception:
-                pass
-        if dst.lower().endswith('.zip'):
-            extract_dir = os.path.splitext(dst)[0]
-            extract_zip(dst, extract_dir, on_file_saved=on_file_saved)
+        print('[' + colors.OKGREEN + 'save' + colors.ENDC + '] |  |  +--%s' % safe_name)
+        r = session_obj.get(src, stream=True, allow_redirects=True)
+        _stream_to_file(r, dst, on_file_saved=on_file_saved)
     except Exception as e:
         print('[' + colors.FAIL + 'fail' + colors.ENDC + '] |  |  +--%s (%s)' % (safe_name, e))
 
 
 def saveLink(session_obj, url, path, name, on_file_saved=None):
-    global files
-    next(files)
     try:
-        # Check if the HTML bookmark or target file already exists
         fname = sanitize_name(name) + '.html'
         dst_html = os.path.join(path, fname)
 
-        # 1. Fetch Moodle URL wrapper page to resolve destination
         r = session_obj.get(url, allow_redirects=True)
-        target_url = url
+        target_url = r.url if r.url else url
         soup = BeautifulSoup(r.text, 'html.parser')
         region = soup.find(class_='region-content') or soup.find(class_='urlworkaround')
         if region and region.find('a'):
-            target_url = region.find('a').get('href', url)
-        elif r.url and r.url != url:
-            target_url = r.url
+            target_url = region.find('a').get('href', target_url)
 
-        # 2. Transform Google Drive / Docs / Cloud storage links to direct download endpoints
-        if 'drive.google.com/file/d/' in target_url:
-            m = re.search(r'drive\.google\.com/file/d/([a-zA-Z0-9_-]+)', target_url)
-            if m:
-                target_url = f"https://drive.google.com/uc?export=download&id={m.group(1)}"
-        elif 'drive.google.com/open?id=' in target_url:
-            m = re.search(r'id=([a-zA-Z0-9_-]+)', target_url)
-            if m:
-                target_url = f"https://drive.google.com/uc?export=download&id={m.group(1)}"
-        elif 'docs.google.com/presentation/d/' in target_url:
-            m = re.search(r'docs\.google\.com/presentation/d/([a-zA-Z0-9_-]+)', target_url)
-            if m:
-                target_url = f"https://docs.google.com/presentation/d/{m.group(1)}/export/pptx"
-        elif 'docs.google.com/document/d/' in target_url:
-            m = re.search(r'docs\.google\.com/document/d/([a-zA-Z0-9_-]+)', target_url)
-            if m:
-                target_url = f"https://docs.google.com/document/d/{m.group(1)}/export?format=pdf"
-        elif 'dropbox.com' in target_url and 'dl=0' in target_url:
-            target_url = target_url.replace('dl=0', 'dl=1')
-
-        # 3. Probe target URL with stream=True (headers only)
-        res = session_obj.get(target_url, stream=True, allow_redirects=True)
-        headers = {k.lower(): v for k, v in res.headers.items()}
-        content_type = headers.get('content-type', '').lower()
-        
-        # Check Content-Disposition for filename
-        cd = headers.get('content-disposition', '')
-        dl_name = None
-        m_cd = re.search(r"filename\*?=(?:UTF-8'')?[\"']?([^\"';\r\n]+)", cd, re.IGNORECASE)
-        if m_cd:
-            dl_name = m_cd.group(1).strip('\"\' ')
-
-        parsed_target = urllib.parse.urlparse(res.url)
-        path_base = os.path.basename(parsed_target.path)
-        
-        doc_extensions = ('.pdf', '.pptx', '.ppt', '.docx', '.doc', '.zip', '.txt', '.md', '.html', '.htm', '.csv', '.xlsx', '.py', '.c', '.cpp')
-        is_direct_doc = (
-            dl_name is not None or
-            any(parsed_target.path.lower().endswith(ext) for ext in doc_extensions) or
-            'application/pdf' in content_type or
-            'application/vnd.openxmlformats' in content_type or
-            'application/vnd.ms-powerpoint' in content_type or
-            'application/zip' in content_type or
-            'application/x-zip' in content_type
-        )
-
-        if is_direct_doc:
-            if not dl_name:
-                if path_base and '.' in path_base:
-                    dl_name = path_base
-                else:
-                    ext = '.pdf'
-                    if 'presentation' in content_type or 'powerpoint' in content_type:
-                        ext = '.pptx'
-                    elif 'zip' in content_type:
-                        ext = '.zip'
-                    elif 'word' in content_type:
-                        ext = '.docx'
-                    dl_name = f"{name}{ext}"
-            dl_name = sanitize_name(urllib.request.url2pathname(dl_name))
-            dst_doc = os.path.join(path, dl_name)
-            if os.path.exists(dst_doc) and os.path.getsize(dst_doc) > 0:
-                res.close()
-                print('[' + colors.OKBLUE + 'skip' + colors.ENDC + '] |  |  +--%s' % dl_name)
-                if on_file_saved:
-                    on_file_saved(dst_doc, is_new=False)
-                return
-            saveFile(session_obj, res.url, path, dl_name, on_file_saved=on_file_saved)
+        # Check if direct document
+        doc_exts = ('.pdf', '.pptx', '.ppt', '.docx', '.zip')
+        if any(urllib.parse.urlparse(target_url).path.lower().endswith(ext) for ext in doc_exts):
+            dl_name = sanitize_name(os.path.basename(urllib.parse.urlparse(target_url).path))
+            saveFile(session_obj, target_url, path, dl_name, on_file_saved=on_file_saved)
             return
 
-        # 4. If it is an HTML webpage, check for embedded lecture notes / file downloads
-        page_soup = BeautifulSoup(res.text, 'html.parser')
-        embedded_docs = []
-        for a_tag in page_soup.find_all('a', href=True):
-            href = a_tag['href'].strip()
-            abs_href = urllib.parse.urljoin(res.url, href)
-            p_h = urllib.parse.urlparse(abs_href).path.lower()
-            if any(p_h.endswith(ext) for ext in ('.pdf', '.pptx', '.ppt', '.zip', '.docx')):
-                embedded_docs.append((abs_href, a_tag.get_text().strip()))
-
-        if embedded_docs:
-            print('[' + colors.OKGREEN + 'link-page' + colors.ENDC + f'] |  |  +--Found {len(embedded_docs)} downloadable document(s) on linked page: {name}')
-            for doc_url, doc_label in embedded_docs:
-                doc_fname = os.path.basename(urllib.parse.urlparse(doc_url).path)
-                if not doc_fname:
-                    doc_fname = f"{doc_label or 'document'}.pdf"
-                saveFile(session_obj, doc_url, path, doc_fname, on_file_saved=on_file_saved)
-
-        # 5. Also save HTML bookmark
+        # Save HTML bookmark
         if not os.path.exists(dst_html) or os.path.getsize(dst_html) == 0:
             with open(dst_html, 'w', encoding='utf-8') as handle:
                 print('[' + colors.OKGREEN + 'save-link' + colors.ENDC + '] |  |  +--%s' % name)
                 handle.write(f'<a href="{target_url}">{name}</a>')
             if on_file_saved:
-                try:
-                    on_file_saved(dst_html, is_new=True)
-                except Exception:
-                    pass
-        else:
-            if on_file_saved:
-                on_file_saved(dst_html, is_new=False)
-
+                on_file_saved(dst_html, is_new=True)
+        elif on_file_saved:
+            on_file_saved(dst_html, is_new=False)
     except Exception as e:
         print('[' + colors.FAIL + 'link-error' + colors.ENDC + '] |  |  +--%s (%s)' % (name, e))
 
 
 def saveInfo(path, info, tab, on_file_saved=None):
-    if "Foren" not in info and info.strip():
-        global files
-        next(files)
+    if info and info.strip():
         name = 'info.txt'
         dst = os.path.join(path, name)
 
@@ -554,7 +444,6 @@ def downloadResource(session_obj, res, path, activity_name=None, course_key=None
     except (TypeError, AttributeError, KeyError):
         return
 
-    # Request headers only with stream=True so large payloads aren't buffered prematurely
     try:
         r = session_obj.get(src, stream=True, allow_redirects=True)
     except Exception as e:
@@ -616,12 +505,11 @@ def downloadResource(session_obj, res, path, activity_name=None, course_key=None
             else:
                 name = f"resource{ext}"
 
-        # Re-align lecture/sequence number if activity title contradicts uploaded file number
         name = realign_lecture_filename(name, activity_name)
         name = sanitize_name(urllib.request.url2pathname(name))
         dst = os.path.abspath(os.path.join(path, name))
 
-        # Inspect Content-Length response header
+        # Collision Disambiguation on Differing Content Length
         content_length = None
         if 'content-length' in headers:
             try:
@@ -629,14 +517,9 @@ def downloadResource(session_obj, res, path, activity_name=None, course_key=None
             except (ValueError, TypeError):
                 content_length = None
 
-        # Collision Disambiguation on Differing Content Length:
-        # If dst exists on disk, but content_length is known and differs from local file,
-        # the incoming file is a different file that happens to share the same filename.
         if os.path.exists(dst) and content_length is not None and os.path.getsize(dst) != content_length:
             local_size = os.path.getsize(dst)
             orig_name = name
-            
-            # Step A: Attempt disambiguation using sanitized activity_name
             base_ext = os.path.splitext(name)[1] or '.pdf'
             if activity_name:
                 clean_act = sanitize_name(activity_name)
@@ -644,69 +527,33 @@ def downloadResource(session_obj, res, path, activity_name=None, course_key=None
                     clean_act += base_ext
                 candidate_dst = os.path.abspath(os.path.join(path, clean_act))
                 if candidate_dst != dst:
-                    name = clean_act
-                    dst = candidate_dst
+                    name, dst = clean_act, candidate_dst
 
-            # Step B: If still collides or no activity_name, append a clean suffix (_1, _2, etc.)
             if os.path.exists(dst) and (content_length is not None and os.path.getsize(dst) != content_length):
                 base_stem, ext = os.path.splitext(name)
                 suffix_idx = 1
                 while True:
                     candidate_name = f"{base_stem}_{suffix_idx}{ext}"
                     candidate_dst = os.path.abspath(os.path.join(path, candidate_name))
-                    if not os.path.exists(candidate_dst) or (content_length is not None and os.path.getsize(candidate_dst) == content_length):
-                        name = candidate_name
-                        dst = candidate_dst
+                    if not os.path.exists(candidate_dst) or os.path.getsize(candidate_dst) == content_length:
+                        name, dst = candidate_name, candidate_dst
                         break
                     suffix_idx += 1
-            
             print('[' + colors.WARNING + 'collision' + colors.ENDC + '] |  |  +--%s -> %s (local %d B vs remote %d B)' % (orig_name, name, local_size, content_length))
 
         # Check if already cataloged in list.md or on disk with matching content size
-        if known_catalog and (dst in known_catalog.get("paths", set()) or (course_key, name) in known_catalog.get("course_files", set())) \
-           and os.path.exists(dst) and os.path.getsize(dst) > 0:
+        is_cataloged = bool(known_catalog and (dst in known_catalog.get("paths", set()) or (course_key, name) in known_catalog.get("course_files", set())))
+        if (is_cataloged or os.path.exists(dst)) and os.path.getsize(dst) > 0:
             if content_length is None or os.path.getsize(dst) == content_length:
                 r.close()
                 print('[' + colors.OKBLUE + 'skip' + colors.ENDC + '] |  |  +--%s' % name)
-                if on_file_saved:
-                    try:
-                        on_file_saved(dst, is_new=False)
-                    except Exception:
-                        pass
-                return
-
-        if os.path.exists(dst) and os.path.getsize(dst) > 0:
-            if content_length is None or os.path.getsize(dst) == content_length:
-                r.close()
-                print('[' + colors.OKBLUE + 'skip' + colors.ENDC + '] |  |  +--%s' % name)
-                if on_file_saved:
-                    try:
-                        on_file_saved(dst, is_new=False)
-                    except Exception:
-                        pass
-                if dst.lower().endswith('.zip'):
-                    extract_dir = os.path.splitext(dst)[0]
-                    if not os.path.exists(extract_dir) or not os.listdir(extract_dir):
-                        extract_zip(dst, extract_dir, on_file_saved=on_file_saved)
+                _skip_existing_file(dst, on_file_saved=on_file_saved)
                 return
 
         # It's a new or disambiguated file - stream blocks directly to file
         try:
-            os.makedirs(os.path.dirname(dst), exist_ok=True)
-            with open(dst, 'wb') as handle:
-                print('[' + colors.OKGREEN + 'save' + colors.ENDC + '] |  |  +--%s' % name)
-                for block in r.iter_content(65536):
-                    if not block:
-                        break
-                    handle.write(block)
-            if on_file_saved:
-                try:
-                    on_file_saved(dst, is_new=True)
-                except Exception:
-                    pass
-            if dst.lower().endswith('.zip'):
-                extract_dir = os.path.splitext(dst)[0]
-                extract_zip(dst, extract_dir, on_file_saved=on_file_saved)
+            print('[' + colors.OKGREEN + 'save' + colors.ENDC + '] |  |  +--%s' % name)
+            _stream_to_file(r, dst, on_file_saved=on_file_saved)
         except Exception as e:
             print('[' + colors.FAIL + 'fail' + colors.ENDC + '] |  |  +--%s (%s)' % (name, e))
     else:
@@ -718,8 +565,6 @@ def downloadFolder(session_obj, folder_url, path, course_key=None, known_catalog
     r = session_obj.get(folder_url)
     if r.status_code == 200:
         soup = BeautifulSoup(r.text, 'html.parser')
-        
-        # 1. Parse individual files inside folder view (preserves exact uploaded filenames)
         pluginfile_links = soup.find_all('a', href=lambda h: h and '/pluginfile.php/' in h)
         if pluginfile_links:
             for a in pluginfile_links:
@@ -730,7 +575,6 @@ def downloadFolder(session_obj, folder_url, path, course_key=None, known_catalog
                 downloadResource(session_obj, a.get('href'), path, activity_name=clean_f_text, course_key=course_key, known_catalog=known_catalog, on_file_saved=on_file_saved)
             return
 
-        # 2. Check for download folder button as fallback
         btn = soup.find('form', action=lambda a: a and 'download_folder.php' in a)
         if btn:
             action = btn.get('action')
@@ -770,14 +614,13 @@ def downloadAssignment(session_obj, assign_url, path, activity_name=None, course
         for container in intro_containers:
             for a in container.find_all('a', href=True):
                 href = urllib.parse.urljoin(assign_url, a['href'].strip())
-                # Safety constraint: Do NOT download student submission files
                 if 'assignsubmission_' in href:
                     continue
                 if '/pluginfile.php/' in href or 'introattachment' in href:
                     if not any(href == item[0] for item in found_links):
                         found_links.append((href, a))
         
-        # 2. Also search page-wide for explicit introattachment links
+        # 2. Page-wide introattachment links
         for a in soup.find_all('a', href=lambda h: h and 'mod_assign/introattachment/' in h):
             href = urllib.parse.urljoin(assign_url, a['href'].strip())
             if 'assignsubmission_' in href:
@@ -785,7 +628,7 @@ def downloadAssignment(session_obj, assign_url, path, activity_name=None, course
             if not any(href == item[0] for item in found_links):
                 found_links.append((href, a))
 
-        # 3. Fallback: Check for direct document links within intro containers
+        # 3. Fallback: direct document links
         if not found_links:
             for container in intro_containers:
                 for a in container.find_all('a', href=True):
@@ -802,8 +645,6 @@ def downloadAssignment(session_obj, assign_url, path, activity_name=None, course
             for hide in a_copy.find_all(class_='accesshide'):
                 hide.decompose()
             link_text = a_copy.get_text().strip()
-            
-            # Use link text if informative; otherwise fall back to activity name
             effective_act = link_text if (link_text and not link_text.lower().endswith(('.php', '.html'))) else activity_name
             downloadResource(
                 session_obj,
@@ -823,8 +664,8 @@ def is_generic_or_date_section(name):
     if not clean or clean.lower() in ('general', 'section-0', 'section 0', 'section_section-0'):
         return True
     
-    # Generic "Topic 1", "Topic 2", "Thema 1", "Section 1", "Section_1"
-    if re.match(r'^(?:Topic|Thema|Section|Unit)\s*[-_]?\s*\d+$', clean, re.IGNORECASE):
+    # Generic "Topic 1", "Section 1", "Unit 1"
+    if re.match(r'^(?:Topic|Section|Unit)\s*[-_]?\s*\d+$', clean, re.IGNORECASE):
         return True
         
     months = r'(?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:tember)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)'
@@ -832,13 +673,10 @@ def is_generic_or_date_section(name):
         return True
     if re.search(rf'\b{months}\s+\d{{1,2}}\s*[-–—]\s*(?:{months}\s+)?\d{{1,2}}', clean, re.IGNORECASE):
         return True
-    if re.search(r'\b\d{1,2}[./]\d{1,2}\s*[-–—]\s*\d{1,2}[./]\d{1,2}', clean):
-        return True
-    return False
+    return bool(re.search(r'\b\d{1,2}[./]\d{1,2}\s*[-–—]\s*\d{1,2}[./]\d{1,2}', clean))
 
 
 def downloadSection(session_obj, s, path, course_key=None, known_catalog=None, on_file_saved=None):
-    global sections
     sec_id = s.get('id', '')
     
     # Section title
@@ -852,7 +690,7 @@ def downloadSection(session_obj, s, path, course_key=None, known_catalog=None, o
     summary_tag = s.find(class_='summary') or s.find(class_='activity label modtype_label ')
     info = summary_tag.get_text().strip() if summary_tag else ''
 
-    # Check if section is a date range or generic section (e.g. Topic 1, General)
+    # Check if section is a date range or generic section
     if is_generic_or_date_section(raw_name):
         secpath = path
     else:
@@ -889,7 +727,6 @@ def downloadSection(session_obj, s, path, course_key=None, known_catalog=None, o
             continue
         href = link_tag.get('href', '')
         
-        # Clean activity name (remove accesshide / accessibility labels)
         inst = act.find(class_='instancename') or act.find(class_='activityname')
         act_name = ''
         if inst:
@@ -935,10 +772,6 @@ def downloadSection(session_obj, s, path, course_key=None, known_catalog=None, o
 
 def downloadCourse(course_item, sem_label, known_catalog=None, on_file_saved=None):
     session_obj = course_item['session']
-    global files
-    global sections
-    files = itertools.count()
-    sections = itertools.count()
     safe_name = sanitize_name(course_item['key'])
     safe_sem = sanitize_name(str(sem_label))
     course_dir = os.path.join(root, safe_sem, safe_name)
@@ -948,16 +781,6 @@ def downloadCourse(course_item, sem_label, known_catalog=None, on_file_saved=Non
     r = session_obj.get(course_item['url'])
     if r.status_code == 200:
         soup = BeautifulSoup(r.text, 'html.parser')
-        dump_dir = os.path.join(course_dir, '.dump')
-        if not os.path.exists(dump_dir):
-            os.makedirs(dump_dir, exist_ok=True)
-
-        dump_fname = sanitize_name(f"{course_item['key']}-{course_item.get('type', 'Course')}-{datetime.date.today()}-full") + ".html"
-        dst = os.path.join(dump_dir, dump_fname)
-
-        with open(dst, 'w', encoding='utf-8') as f:
-            f.write(str(soup))
-            
         sec_elements = soup.find_all('li', class_=lambda c: c and 'section' in c)
         if not sec_elements:
             sec_elements = soup.find_all(class_=lambda c: c and ('course-section' in c or 'section main' in c))
@@ -966,10 +789,8 @@ def downloadCourse(course_item, sem_label, known_catalog=None, on_file_saved=Non
             downloadSection(session_obj, s, course_dir, course_key=course_item['key'], known_catalog=known_catalog, on_file_saved=on_file_saved)
 
         # Remove any empty subdirectories left behind
-        for root_d, dirs, files_list in os.walk(course_dir, topdown=False):
+        for root_d, dirs, _ in os.walk(course_dir, topdown=False):
             for d in dirs:
-                if d == '.dump':
-                    continue
                 full_d = os.path.join(root_d, d)
                 try:
                     if not os.listdir(full_d):
@@ -980,107 +801,273 @@ def downloadCourse(course_item, sem_label, known_catalog=None, on_file_saved=Non
         print('ERROR: ' + str(r.status_code) + ' ' + str(r.reason))
 
 
-def main():
-    print(colors.HEADER)
-    banner = r"""
-      _____                    .___.__              
-     /     \   ____   ____   __| _/|  |   ____      
-    /  \ /  \ /  _ \ /  _ \ / __ | |  | _/ __ \     
-   /    Y    (  <_> |  <_> ) /_/ | |  |_\  ___/     
-   \____|__  /\____/ \____/\____ | |____/\___  >    
-           \/                   \/           \/     
-  _________                                         
- /   _____/ ________________  ______   ___________  
- \_____  \_/ ___\_  __ \__  \ \____ \_/ __ \_  __ \ 
- /        \  \___|  | \// __ \|  |_> >  ___/|  | \/ 
-/_______  /\___  >__|  (____  /   __/ \___  >__|    
-        \/     \/           \/|__|        \/        
-"""
-    print(banner)
-    print(colors.ENDC)
+# =====================================================================
+# Streaming Synchronizer & Multi-Source Orchestrator
+# =====================================================================
 
-    cfg = get_config()
-    uname = cfg.get("user", "")
-    pwd = cfg.get("password", "")
-    b_urls = cfg.get("baseurls", baseurls)
-    if not uname or not pwd or uname == "your_kerberos_id_here":
-        print(colors.FAIL + "Error: Kerberos credentials not found in '.env'." + colors.ENDC)
-        print("Please run setup first to configure your credentials:")
-        print("  python agent_tools.py /setup\n")
-        sys.exit(1)
+def get_moodle_sessions():
+    config = get_config()
+    user = config["user"]
+    password = config["password"]
+    base_urls = config["baseurls"]
 
-    # logging into all configured Moodle sites
+    if not user or not password or user == "your_kerberos_id_here":
+        return None, "Missing Kerberos credentials in .env. Please run /setup first."
+
     sessions_by_url = {}
-    print(f"Logging into {len(b_urls)} Moodle site(s)...")
-    for b_url in b_urls:
-        print(f"  --> Connecting to {b_url} ...")
-        ses = login(b_url, uname, pwd)
+    for b_url in base_urls:
+        ses = login(b_url, user, password)
         if ses:
             sessions_by_url[b_url] = ses
-            print(colors.OKGREEN + f"  [OK] Logged into {b_url}" + colors.ENDC)
-        else:
-            print(colors.FAIL + f"  [FAIL] Could not log into {b_url}" + colors.ENDC)
 
     if not sessions_by_url:
-        print(colors.FAIL + 'Could not log into any Moodle site. Please check your credentials and network connection.' + colors.ENDC)
-        sys.exit(1)
+        return None, "Could not authenticate with any Moodle instance. Please check your credentials in .env."
 
-    # discover courses & semesters across all sites
-    print("\nDiscovering courses across all configured Moodle sites...")
+    return sessions_by_url, None
+
+
+def discover_available_semesters() -> Dict[str, Any]:
+    """Connects to Moodle and discovers all enrolled semesters and courses without downloading."""
+    sessions_by_url, err = get_moodle_sessions()
+    if err:
+        return {"status": "error", "message": err}
+
     all_courses, sems = getAllCoursesAndSemesters(sessions_by_url)
-    
     if not all_courses:
-        print(colors.FAIL + 'No courses found across configured Moodle sites - Quitting!' + colors.ENDC)
-        sys.exit(0)
+        return {"status": "error", "message": "No courses found."}
 
-    print(colors.WARNING + f'\nAvailable semesters ({len(all_courses)} total courses found):' + colors.ENDC)
-    for s_key in sorted(sems.keys()):
-        print(f'[{s_key}]: {sems[s_key]}')
+    sem_info = {}
+    for s_key, s_label in sems.items():
+        count = len(all_courses) if s_key == "all" else len([c for c in all_courses if c["sem"] == s_key])
+        sem_info[s_key] = {"label": s_label, "course_count": count}
 
-    # input loop
-    s = ''
-    while s not in sems:
-        s = input(colors.WARNING + '\nSelect semester (or "all"): ' + colors.ENDC).strip()
+    return {"status": "success", "total_courses": len(all_courses), "semesters": sem_info}
 
-    # filter courses
-    if s == 'all':
-        courses = all_courses
-    else:
-        courses = [c for c in all_courses if c['sem'] == s]
 
-    print(colors.WARNING + f'\nAvailable courses ({len(courses)} in selection):' + colors.ENDC)
-    for idx, c in enumerate(courses):
-        print(f'[{idx}] [{c["site_tag"]}]: {c["name"]}')
+def sync_custom_sources(known_catalog: Optional[Dict[str, Any]] = None, on_file_saved_callback=None, max_workers: int = 4) -> Dict[str, Any]:
+    """Syncs registered custom URLs from data/custom_urls.json."""
+    config = get_config()
+    url_mgr = CustomUrlManager(config["workspace_dir"])
+    sources = url_mgr.get_sources()
+    if not sources:
+        return {"status": "empty", "message": "No custom URLs registered.", "sources_count": 0, "files_downloaded": 0}
 
-    # confirmation
-    c_choice = input(colors.WARNING + '\nChoose number of course to download, (a) for all or (q) to quit: ' + colors.ENDC).strip()
-    if c_choice == 'a':
-        sem_label = sems[s] if s != 'all' else 'All_Courses'
-        for f in courses:
+    print(f"\n[Custom URL Sync] Syncing {len(sources)} registered source(s)...")
+    results = []
+    total_dl = 0
+    for s in sources:
+        res = scrape_custom_source(s, Path(config["output_dir"]), known_catalog=known_catalog, on_file_saved=on_file_saved_callback)
+        count = res.get("downloaded_files_count", 0)
+        total_dl += count
+        url_mgr.update_sync_stats(s["url"], count)
+        results.append(res)
+
+    return {"status": "success", "sources_synced": len(sources), "files_downloaded": total_dl, "details": results}
+
+
+def sync_user_files(known_catalog: Optional[Dict[str, Any]] = None, on_file_saved_callback=None) -> Dict[str, Any]:
+    """Scans local user_files/ for personal study materials and dispatches them for indexing."""
+    user_files_dir = Path(get_config()["user_files_dir"])
+    if not user_files_dir.exists():
+        user_files_dir.mkdir(parents=True, exist_ok=True)
+        return {"status": "empty", "files_found": 0, "message": "user_files/ folder is empty."}
+
+    supported = {".pdf", ".pptx", ".ppt", ".docx", ".zip", ".txt", ".md", ".html", ".htm"}
+    files_to_sync = []
+    for root_dir, _, file_list in os.walk(user_files_dir):
+        if ".dump" in root_dir:
+            continue
+        for f in sorted(file_list):
+            if not f.startswith(".") and f.lower() not in ("readme.md", ".gitkeep") and Path(f).suffix.lower() in supported:
+                files_to_sync.append(Path(root_dir) / f)
+
+    if not files_to_sync:
+        return {"status": "empty", "files_found": 0, "message": "No documents found in user_files/."}
+
+    print(f"\n[User Files Sync] Discovered {len(files_to_sync)} document(s) in user_files/...")
+    dispatched = 0
+    for f_path in files_to_sync:
+        abs_str = str(f_path.resolve())
+        is_new = not (known_catalog and abs_str in known_catalog.get("paths", set()))
+        if on_file_saved_callback:
+            on_file_saved_callback(abs_str, is_new=is_new)
+            dispatched += 1
+
+    return {"status": "success", "files_found": len(files_to_sync), "files_dispatched": dispatched}
+
+
+def sync_moodle_courses(
+    semester_filter: Optional[str] = None,
+    course_filter: Optional[str] = None,
+    quick_check: bool = False,
+    course_index: Optional[str] = None,
+    max_workers: int = 4,
+    sync_custom: bool = True
+) -> Dict[str, Any]:
+    """
+    Streaming async sync pipeline: downloads new Moodle/custom files and indexes them on the fly.
+    """
+    config = get_config()
+    output_dir = Path(config["output_dir"])
+    user_files_dir = Path(config["user_files_dir"])
+    parsed_dir = config["parsed_dir"]
+    chroma_dir = config["chroma_dir"]
+    workspace_dir = config["workspace_dir"]
+
+    parser = DocumentParser(str(output_dir), parsed_dir, user_files_dir=str(user_files_dir))
+    indexer = KnowledgeIndexer(chroma_dir)
+    list_mgr = ListManager(workspace_dir, str(output_dir), parsed_dir, user_files_dir=str(user_files_dir))
+
+    known_catalog = list_mgr.get_known_files_from_list()
+    if known_catalog["total_files"] > 0:
+        print(f"[Sync] [INFO] Inspected list.md: Found {known_catalog['total_files']} files already indexed across courses.")
+
+    lock = threading.Lock()
+    processed_files = set()
+    indexed_chunks_total = 0
+    futures = []
+    executor = concurrent.futures.ThreadPoolExecutor(max_workers=max_workers)
+
+    def async_process_file(file_path_str: str, is_new: bool):
+        nonlocal indexed_chunks_total
+        p = Path(file_path_str)
+        if not p.exists() or p.is_dir() or p.name.startswith("."):
+            return
+
+        with lock:
+            if file_path_str in processed_files:
+                return
+            processed_files.add(file_path_str)
+
+        if not is_new and str(p.resolve()) in known_catalog.get("paths", set()):
+            return
+
+        ext = p.suffix.lower()
+        if ext in (".pdf", ".txt", ".md", ".html", ".htm", ".pptx", ".ppt", ".docx", ".zip"):
             try:
-                target_sem = f"Semester_{f['sem']}" if f['sem'] != 'General' else 'General_Courses'
-                downloadCourse(f, target_sem)
-                print(colors.WARNING + f'Successfully processed course {f["name"]}!' + colors.ENDC)
-            except Exception as e:
-                print(f"Error while processing {f['name']}: {e}")
-        sys.exit(0)
+                chunks = parser.parse_file(p, force=False)
+                if chunks:
+                    with lock:
+                        count = indexer.index_parsed_chunks(chunks)
+                        indexed_chunks_total += count
+                    print(f"  [Async RAG] Converted & Indexed: {p.name} ({len(chunks)} pages, {count} chunks)")
+            except Exception as ex:
+                print(f"  [Async RAG Error] {p.name}: {ex}")
 
-    if c_choice == 'q':
-        print(colors.FAIL + 'Quitting!' + colors.ENDC)
-        sys.exit(0)
+    def on_file_saved_callback(saved_path: str, is_new: bool = True):
+        future = executor.submit(async_process_file, saved_path, is_new)
+        futures.append(future)
 
-    try:
-        course_idx = int(c_choice)
-        if 0 <= course_idx < len(courses):
-            selected_course = courses[course_idx]
-            target_sem = f"Semester_{selected_course['sem']}" if selected_course['sem'] != 'General' else 'General_Courses'
-            downloadCourse(selected_course, target_sem)
-            print(colors.WARNING + f'Successfully processed course {selected_course["name"]}!' + colors.ENDC)
-        else:
-            print(colors.FAIL + 'Invalid course number!' + colors.ENDC)
-    except ValueError:
-        print(colors.FAIL + 'Invalid choice!' + colors.ENDC)
+    if semester_filter and semester_filter.lower() in ("user", "user_files", "local"):
+        user_res = sync_user_files(known_catalog=known_catalog, on_file_saved_callback=on_file_saved_callback)
+        concurrent.futures.wait(futures)
+        executor.shutdown(wait=True)
+        list_mgr.update_list_file()
+        return {"status": "success", "type": "user_files_only", "files_found": user_res.get("files_found", 0), "files_processed": len(processed_files), "total_chunks_indexed": indexed_chunks_total, "list_file": str(list_mgr.list_file_path)}
 
+    if semester_filter and semester_filter.lower() == "custom":
+        custom_res = sync_custom_sources(known_catalog=known_catalog, on_file_saved_callback=on_file_saved_callback, max_workers=max_workers)
+        concurrent.futures.wait(futures)
+        executor.shutdown(wait=True)
+        list_mgr.update_list_file()
+        return {"status": "success", "type": "custom_only", "sources_synced": custom_res.get("sources_synced", 0), "files_processed": len(processed_files), "total_chunks_indexed": indexed_chunks_total, "list_file": str(list_mgr.list_file_path)}
 
-if __name__ == '__main__':
-    main()
+    sessions_by_url, err = get_moodle_sessions()
+    moodle_courses_synced = 0
+
+    if not err:
+        all_courses, sems = getAllCoursesAndSemesters(sessions_by_url)
+        if all_courses:
+            if not semester_filter:
+                semester_filter = config.get("tracked_semester", "2601")
+
+            if semester_filter == "all":
+                target_courses = all_courses
+            elif semester_filter in sems:
+                target_courses = [c for c in all_courses if c["sem"] == semester_filter]
+            else:
+                matched = [c for c in all_courses if semester_filter in str(c.get("sem", ""))]
+                target_courses = matched if matched else all_courses
+
+            if course_filter:
+                cf_clean = course_filter.lower().strip()
+                matched_cf = [c for c in target_courses if cf_clean in c.get("key", "").lower() or cf_clean in c.get("name", "").lower()]
+                if not matched_cf:
+                    matched_cf = [c for c in all_courses if cf_clean in c.get("key", "").lower() or cf_clean in c.get("name", "").lower()]
+                if matched_cf:
+                    target_courses = matched_cf
+                else:
+                    return {"status": "course_not_found", "message": f"No enrolled Moodle course matched '{course_filter}'."}
+
+            if course_index is not None:
+                try:
+                    idx = int(course_index)
+                    if 0 <= idx < len(target_courses):
+                        target_courses = [target_courses[idx]]
+                except ValueError:
+                    pass
+
+            if quick_check:
+                all_up_to_date = True
+                for course_item in target_courses:
+                    session_obj = course_item.get("session")
+                    if not session_obj:
+                        all_up_to_date = False
+                        continue
+                    try:
+                        resp = session_obj.get(course_item["url"], timeout=10)
+                        if resp.status_code == 200:
+                            soup = BeautifulSoup(resp.text, "html.parser")
+                            found_links = soup.find_all("a", href=lambda h: h and ("/mod/resource/" in h or "/mod/folder/" in h or "/mod/assign/" in h))
+                            c_key = course_item["key"]
+                            known_c_files = {fname.lower() for (ck, fname) in known_catalog.get("course_files", set()) if ck.lower() == c_key.lower()}
+                            for a in found_links:
+                                clean_lbl = re.sub(r"\s+", " ", a.get_text().strip()).lower()
+                                if clean_lbl and not any(clean_lbl in kf or kf.startswith(clean_lbl) for kf in known_c_files):
+                                    all_up_to_date = False
+                                    break
+                        else:
+                            all_up_to_date = False
+                    except Exception:
+                        all_up_to_date = False
+
+                if all_up_to_date and len(target_courses) > 0:
+                    checked_keys = [c["key"] for c in target_courses]
+                    return {"status": "up_to_date", "quick_check": True, "courses_checked": checked_keys, "new_files": 0, "message": f"Course(s) {', '.join(checked_keys)} are fully up to date."}
+
+            print(f"\n[Sync] [START] Starting sync for {len(target_courses)} course(s) (Semester: {semester_filter})...")
+            for course_item in target_courses:
+                sem_label = f"Semester_{course_item['sem']}" if course_item.get("sem") else "General"
+                downloadCourse(course_item, sem_label, known_catalog=known_catalog, on_file_saved=on_file_saved_callback)
+            moodle_courses_synced = len(target_courses)
+    else:
+        print(f"[Sync Notice] Moodle credentials not configured or failed ({err}). Proceeding with custom sources if any.")
+
+    custom_sources_count = 0
+    if sync_custom and not course_filter:
+        custom_res = sync_custom_sources(known_catalog=known_catalog, on_file_saved_callback=on_file_saved_callback, max_workers=max_workers)
+        custom_sources_count = custom_res.get("sources_synced", 0)
+
+    user_files_count = 0
+    if not course_filter:
+        user_res = sync_user_files(known_catalog=known_catalog, on_file_saved_callback=on_file_saved_callback)
+        user_files_count = user_res.get("files_found", 0)
+
+    print("\n[Sync] Waiting for streaming indexing pipeline to finish remaining files...")
+    concurrent.futures.wait(futures)
+    executor.shutdown(wait=True)
+
+    print("[Sync] [INFO] Updating list.md file structure...")
+    list_mgr.update_list_file()
+
+    return {
+        "status": "success",
+        "semester": semester_filter,
+        "courses_synced": moodle_courses_synced,
+        "custom_sources_synced": custom_sources_count,
+        "user_files_found": user_files_count,
+        "files_processed": len(processed_files),
+        "total_chunks_indexed": indexed_chunks_total,
+        "list_file": str(list_mgr.list_file_path),
+        "message": f"Successfully synced {moodle_courses_synced} Moodle course(s), {custom_sources_count} custom source(s), and {user_files_count} user file(s)."
+    }

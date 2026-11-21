@@ -1,6 +1,6 @@
 import os
 import sys
-import configparser
+import functools
 from pathlib import Path
 from dotenv import load_dotenv
 
@@ -21,8 +21,9 @@ WORKSPACE_DIR = Path(__file__).resolve().parent.parent
 ENV_PATH = WORKSPACE_DIR / ".env"
 load_dotenv(dotenv_path=ENV_PATH)
 
+@functools.lru_cache(maxsize=1)
 def get_config():
-    """Loads configuration directly from .env, refreshing from disk."""
+    """Loads configuration directly from .env, cached for fast repeated access."""
     if ENV_PATH.exists():
         load_dotenv(dotenv_path=ENV_PATH, override=True)
     user = os.getenv("KERBEROS_USER", "")
@@ -36,9 +37,7 @@ def get_config():
     tracked_semester = os.getenv("TRACKED_SEMESTER", "")
 
     urls_list = [u.strip() for u in baseurls.split(",") if u.strip()]
-
     user_files_resolved = (WORKSPACE_DIR / user_files_dir).resolve()
-    user_files_resolved.mkdir(parents=True, exist_ok=True)
 
     return {
         "user": user,
@@ -69,48 +68,26 @@ def init_env_template():
             "PARSED_DIR=data/parsed\n"
             "CHROMA_DIR=data/chroma_db\n"
         )
-        with open(ENV_PATH, "w", encoding="utf-8") as f:
-            f.write(template_content)
+        ENV_PATH.write_text(template_content, encoding="utf-8")
     return str(ENV_PATH)
 
 def save_env_config(user, password, baseurls=None, output_dir=None, tracked_semester=None, user_files_dir=None):
     """Saves user credentials, tracked semester, and paths to .env."""
-    lines = [
-        f"KERBEROS_USER={user}",
-        f"KERBEROS_PASSWORD={password}",
-    ]
-    if baseurls:
-        if isinstance(baseurls, list):
-            baseurls = ", ".join(baseurls)
-        lines.append(f"MOODLE_BASEURLS={baseurls}")
-    else:
-        lines.append("MOODLE_BASEURLS=https://moodle.iitd.ac.in/, https://moodlenew.iitd.ac.in/")
+    if isinstance(baseurls, list):
+        baseurls = ", ".join(baseurls)
 
-    if tracked_semester:
-        lines.append(f"TRACKED_SEMESTER={tracked_semester}")
-    else:
-        curr_sem = os.getenv("TRACKED_SEMESTER", "")
-        lines.append(f"TRACKED_SEMESTER={curr_sem}")
+    cfg = {
+        "KERBEROS_USER": user,
+        "KERBEROS_PASSWORD": password,
+        "MOODLE_BASEURLS": baseurls or os.getenv("MOODLE_BASEURLS", "https://moodle.iitd.ac.in/, https://moodlenew.iitd.ac.in/"),
+        "TRACKED_SEMESTER": tracked_semester or os.getenv("TRACKED_SEMESTER", ""),
+        "OUTPUT_DIR": output_dir or os.getenv("OUTPUT_DIR", "output"),
+        "USER_FILES_DIR": user_files_dir or os.getenv("USER_FILES_DIR", "user_files"),
+        "PARSED_DIR": os.getenv("PARSED_DIR", "data/parsed"),
+        "CHROMA_DIR": os.getenv("CHROMA_DIR", "data/chroma_db"),
+    }
 
-    if output_dir:
-        lines.append(f"OUTPUT_DIR={output_dir}")
-    else:
-        curr_out = os.getenv("OUTPUT_DIR", "output")
-        lines.append(f"OUTPUT_DIR={curr_out}")
-
-    if user_files_dir:
-        lines.append(f"USER_FILES_DIR={user_files_dir}")
-    else:
-        curr_uf = os.getenv("USER_FILES_DIR", "user_files")
-        lines.append(f"USER_FILES_DIR={curr_uf}")
-
-    lines.append("PARSED_DIR=data/parsed")
-    lines.append("CHROMA_DIR=data/chroma_db")
-
-    with open(ENV_PATH, "w", encoding="utf-8") as f:
-        f.write("\n".join(lines) + "\n")
-    
-    # Reload environment
+    ENV_PATH.write_text("\n".join(f"{k}={v}" for k, v in cfg.items()) + "\n", encoding="utf-8")
+    get_config.cache_clear()
     load_dotenv(dotenv_path=ENV_PATH, override=True)
     return True
-

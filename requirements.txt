@@ -3,10 +3,9 @@ requests>=2.28.0
 beautifulsoup4>=4.11.0
 python-dotenv>=1.0.0
 
-# Document Parsers & Splitters
+# Document Parsers
 pymupdf4llm>=0.0.17
 python-pptx>=0.6.21
-langchain-text-splitters>=0.0.1
 
 # Local Embeddings & Lexical Retrieval (Zero Cloud / Zero ChromaDB)
 onnxruntime>=1.15.0

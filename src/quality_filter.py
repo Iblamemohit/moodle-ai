@@ -18,9 +18,11 @@ class QualityAssessment:
     is_acceptable: bool
     is_visual_only: bool
     reason: str
-    alphanumeric_ratio: float
-    drawing_count: int
-    word_count: int
+
+    def __init__(self, is_acceptable: bool, is_visual_only: bool, reason: str, **kwargs):
+        self.is_acceptable = is_acceptable
+        self.is_visual_only = is_visual_only
+        self.reason = reason
 
 
 class SlideQualityClassifier:
@@ -50,18 +52,13 @@ class SlideQualityClassifier:
         text_clean = raw_text.strip()
         words = re.findall(r'\b[A-Za-z0-9_]+\b', text_clean)
         word_count = len(words)
-        total_chars = len(text_clean)
 
         # Rule 1: CAD Blueprint / Complex Vector Drawing Detector
-        # High vector paths with very few words indicates an architectural/structural drawing
         if drawing_count >= cls.CAD_DRAWING_THRESHOLD and word_count <= cls.CAD_MAX_WORDS:
             return QualityAssessment(
                 is_acceptable=False,
                 is_visual_only=True,
-                reason=f"CAD/Vector Drawing ({drawing_count} vector paths, only {word_count} words)",
-                alphanumeric_ratio=0.0,
-                drawing_count=drawing_count,
-                word_count=word_count
+                reason=f"CAD/Vector Drawing ({drawing_count} vector paths, only {word_count} words)"
             )
 
         # Rule 2: Low-Information or Scanned Image Slide with negligible text
@@ -70,32 +67,23 @@ class SlideQualityClassifier:
             return QualityAssessment(
                 is_acceptable=False,
                 is_visual_only=has_visuals,
-                reason=f"Insufficient text ({word_count} words)",
-                alphanumeric_ratio=0.0,
-                drawing_count=drawing_count,
-                word_count=word_count
+                reason=f"Insufficient text ({word_count} words)"
             )
 
         # 3. Analyze text quality heuristics
-        is_gibberish, reason, alpha_ratio = cls.is_gibberish_text(text_clean)
+        is_gibberish, reason, _ = cls.is_gibberish_text(text_clean)
         if is_gibberish:
             has_visuals = drawing_count > 5 or image_count > 0
             return QualityAssessment(
                 is_acceptable=False,
                 is_visual_only=has_visuals,
-                reason=reason,
-                alphanumeric_ratio=alpha_ratio,
-                drawing_count=drawing_count,
-                word_count=word_count
+                reason=reason
             )
 
         return QualityAssessment(
             is_acceptable=True,
             is_visual_only=False,
-            reason="Pristine slide text",
-            alphanumeric_ratio=alpha_ratio,
-            drawing_count=drawing_count,
-            word_count=word_count
+            reason="Pristine slide text"
         )
 
     @classmethod
@@ -120,7 +108,6 @@ class SlideQualityClassifier:
             return True, f"Corrupt encoding ({corrupt_ratio:.1%} replacement/control chars)", 0.0
 
         # Check 2: Alphanumeric Density Threshold
-        # Ignore markdown table/formatting characters when computing base text length
         alpha_chars = sum(1 for c in stripped if c.isalnum())
         alpha_ratio = alpha_chars / total_len
 
@@ -137,7 +124,6 @@ class SlideQualityClassifier:
                 return True, f"Decomposed font artifact ({single_ratio:.1%} single-letter words)", alpha_ratio
 
         # Check 4: Coordinate / Number Dump Detector
-        # (e.g. continuous numbers or coordinates without semantic English/scientific words)
         words_alpha = [w for w in words if any(c.isalpha() for c in w)]
         if len(words) >= 15 and len(words_alpha) / len(words) < 0.15:
             return True, "Coordinate/numeric table dump without semantic words", alpha_ratio
@@ -163,19 +149,18 @@ class SlideQualityClassifier:
                 clean_lines.append("")
                 continue
 
-            # Strip lines that are pure repetitive punctuation (e.g. '____' or '------' or '| | | |')
+            # Strip lines that are pure repetitive punctuation
             if re.fullmatch(r'[-_=*~|#\s/\\+.,:;]+', s_line) and len(s_line) > 3:
                 # Keep standard markdown hr '---' or table dividers
                 if s_line in ('---', '***', '___') or re.fullmatch(r'\|(?:\s*:?---+:?\s*\|)+', s_line):
                     clean_lines.append(s_line)
                 continue
 
-            # Strip lines with excessive <br> tag dumps (e.g. '1<br>1a<br>2<br>')
+            # Strip lines with excessive <br> tag dumps
             if s_line.lower().count('<br>') > 3:
                 continue
 
             clean_lines.append(line)
 
         # Collapse 3+ consecutive newlines into 2
-        result = re.sub(r'\n{3,}', '\n\n', "\n".join(clean_lines)).strip()
-        return result
+        return re.sub(r'\n{3,}', '\n\n', "\n".join(clean_lines)).strip()

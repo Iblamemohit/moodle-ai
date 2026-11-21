@@ -5,84 +5,90 @@ import re
 from pathlib import Path
 from typing import List, Dict, Any, Optional
 import numpy as np
-from langchain_text_splitters import Language, RecursiveCharacterTextSplitter
 from rank_bm25 import BM25Okapi
 from src.embeddings import MiniLMEmbeddings
 
-def prune_chunk_text(text: str, query: str, max_chars: int = 450) -> str:
+
+class MarkdownTextSplitter:
     """
-    Extracts the most salient, high-density paragraphs and bullet points matching the query,
-    stripping parser noise, duplicate headers, and multi-line blank gaps.
+    Lightweight, dependency-free Markdown recursive text splitter.
+    Splits along headers, paragraphs, and lines with configurable overlap.
+    """
+    def __init__(self, chunk_size: int = 1000, chunk_overlap: int = 200):
+        self.chunk_size = chunk_size
+        self.chunk_overlap = chunk_overlap
+
+    def split_text(self, text: str) -> List[str]:
+        if not text or len(text) <= self.chunk_size:
+            return [text.strip()] if text and text.strip() else []
+
+        separators = ["\n## ", "\n### ", "\n#### ", "\n\n", "\n", " "]
+        return self._split(text, separators)
+
+    def _split(self, text: str, separators: List[str]) -> List[str]:
+        if len(text) <= self.chunk_size or not separators:
+            return [text.strip()] if text.strip() else []
+
+        sep = separators[0]
+        remaining_seps = separators[1:]
+        parts = text.split(sep)
+
+        chunks: List[str] = []
+        current: List[str] = []
+        current_len = 0
+
+        for idx, part in enumerate(parts):
+            token = (sep + part) if idx > 0 and not sep.startswith("\n#") else part
+            token_len = len(token)
+
+            if token_len > self.chunk_size:
+                if current:
+                    chunks.append("".join(current).strip())
+                    current = []
+                    current_len = 0
+                sub_chunks = self._split(token, remaining_seps)
+                chunks.extend(sub_chunks)
+            elif current_len + token_len <= self.chunk_size:
+                current.append(token)
+                current_len += token_len
+            else:
+                chunks.append("".join(current).strip())
+                overlap_tokens: List[str] = []
+                overlap_len = 0
+                for prev in reversed(current):
+                    if overlap_len + len(prev) <= self.chunk_overlap:
+                        overlap_tokens.insert(0, prev)
+                        overlap_len += len(prev)
+                    else:
+                        break
+                current = overlap_tokens + [token]
+                current_len = overlap_len + token_len
+
+        if current:
+            cleaned = "".join(current).strip()
+            if cleaned:
+                chunks.append(cleaned)
+
+        return [c for c in chunks if c]
+
+def prune_chunk_text(text: str, query: str = "", max_chars: int = 450) -> str:
+    """
+    Returns clean, intact chunk text without mid-equation butchering.
+    Collapses excessive newlines while preserving formatting and formulas.
     """
     if not text:
         return ""
+    return re.sub(r"\n{3,}", "\n\n", text.strip())
 
-    # Collapse excessive newlines and spaces
-    cleaned = re.sub(r"\n{3,}", "\n\n", text.strip())
-    lines = cleaned.split("\n")
-    
-    header_lines = []
-    content_blocks = []
-    curr_block = []
 
-    for line in lines:
-        stripped = line.strip()
-        if not stripped:
-            if curr_block:
-                content_blocks.append("\n".join(curr_block))
-                curr_block = []
-            continue
-        # Check if it's a slide header / markdown title
-        if stripped.startswith(("#", "Slide ", "<!--")):
-            if not header_lines:
-                header_lines.append(stripped)
-            continue
-        curr_block.append(stripped)
-
-    if curr_block:
-        content_blocks.append("\n".join(curr_block))
-
-    # Tokenize query for scoring paragraphs
-    stop_words = {'what', 'is', 'the', 'of', 'in', 'and', 'to', 'a', 'for', 'on', 'how', 'it', 'are', 'as', 'by', 'an', 'be', 'at', 'with', 'or', 'from', 'this', 'that', 'which', 'do', 'does', 'can', 'we', 'i', 'you'}
-    q_tokens = {w.lower() for w in re.findall(r'\w+', query) if len(w) > 1 and w.lower() not in stop_words}
-
-    # Score each content block
-    scored_blocks = []
-    for idx, block in enumerate(content_blocks):
-        b_tokens = {w.lower() for w in re.findall(r'\w+', block) if len(w) > 1}
-        overlap = len(q_tokens.intersection(b_tokens))
-        # Prefer blocks with overlap, or earlier blocks if no overlap
-        score = overlap * 10 - idx
-        scored_blocks.append((score, idx, block))
-
-    # Sort blocks by score descending
-    scored_blocks.sort(key=lambda x: x[0], reverse=True)
-
-    header = "\n".join(header_lines)
-    selected_blocks = []
-    total_len = len(header)
-
-    for score, idx, block in scored_blocks:
-        if total_len + len(block) + 2 <= max_chars or not selected_blocks:
-            selected_blocks.append((idx, block))
-            total_len += len(block) + 2
-        else:
-            remaining = max_chars - total_len - 5
-            if remaining > 80:
-                selected_blocks.append((idx, block[:remaining].rsplit(' ', 1)[0] + "..."))
-            break
-
-    # Restore original document reading order
-    selected_blocks.sort(key=lambda x: x[0])
-    body = "\n\n".join(b[1] for b in selected_blocks)
-
-    if header and body:
-        return f"{header}\n\n{body}"
-    elif body:
-        return body
-    elif header:
-        return header
-    return text[:max_chars]
+DERIVATION_KEYWORDS = (
+    "derivation", "derive", "prove", "proof", "theorem", "show that", "deduce",
+    "stiffness matrix", "transformation matrix", "matrix assembly", "assembly",
+    "shape function", "shape functions", "equilibrium equation", "equilibrium equations",
+    "governing equation", "governing equations", "formulation", "constitutive",
+    "differential equation", "virtual work", "stress block", "moment distribution",
+    "compatibility", "boundary condition", "solution derivation"
+)
 
 
 def is_derivation_query(query: str) -> bool:
@@ -90,8 +96,41 @@ def is_derivation_query(query: str) -> bool:
     Detects whether a user query requires complete mathematical derivation context
     to trigger parent-child window expansion (3 contiguous slide pages).
     """
+    if not query:
+        return False
     q_lower = query.lower()
-    return any(k in q_lower for k in ("derivation", "derive", "prove", "proof", "theorem", "show that", "deduce"))
+    return any(k in q_lower for k in DERIVATION_KEYWORDS)
+
+
+MATH_PATTERNS = [
+    r"\$\$[\s\S]+?\$\$",                                                # display math blocks
+    r"\\begin\{(?:bmatrix|pmatrix|matrix|align|equation|gather)\*?\}", # matrix and equation environments
+    r"\\(?:frac|int|iint|sum|prod|partial|sqrt|nabla)\b",              # calculus and math operators
+    r"\[(?:[Kk]|[Tt]|[Mm]|[Cc])\]",                                     # structural matrix notations [K], [k], [T], [M], [C]
+    r"\{(?:[dD]|[Ff]|[Uu]|[Qq]|[rR])\}",                                # displacement and force vectors {d}, {F}, {u}, {q}
+    r"\b[A-Za-z]+_[A-Za-z0-9]+\s*=\s*",                                 # indexed equations like k_11 =, M_BA =
+    r"\\(?:mathbf|boldsymbol|mathbb)\b",                                # vector/tensor notation
+]
+
+
+def has_math_or_derivation_content(text: str) -> bool:
+    """
+    Detects whether a chunk of text contains complex mathematics, structural matrices,
+    or derivation formulations that warrant contiguous tri-page window expansion.
+    """
+    if not text:
+        return False
+    for pattern in MATH_PATTERNS:
+        if re.search(pattern, text):
+            return True
+    
+    # Dense inline math occurrences (3+ inline $...$ expressions)
+    inline_math = re.findall(r"\$[^$\n]+\$", text)
+    if len(inline_math) >= 3:
+        return True
+
+    return False
+
 
 
 class KnowledgeIndexer:
@@ -105,8 +144,10 @@ class KnowledgeIndexer:
             p = Path(db_path_or_dir)
             if p.suffix == ".db":
                 self.db_path = p
-            else:
+            elif p.name == "chroma_db":
                 self.db_path = p.parent / "moodle_knowledge.db"
+            else:
+                self.db_path = p / "moodle_knowledge.db" if p.is_dir() else p
         else:
             self.db_path = Path("data/moodle_knowledge.db")
 
@@ -117,9 +158,8 @@ class KnowledgeIndexer:
         # Standalone ONNX MiniLM embedding generator
         self.embedding_fn = MiniLMEmbeddings()
 
-        # Markdown-Aware Text Splitter (LangChain)
-        self.text_splitter = RecursiveCharacterTextSplitter.from_language(
-            language=Language.MARKDOWN,
+        # Markdown-Aware Text Splitter (Native, stdlib)
+        self.text_splitter = MarkdownTextSplitter(
             chunk_size=1000,
             chunk_overlap=200
         )
@@ -128,10 +168,6 @@ class KnowledgeIndexer:
         self.bm25_corpus: List[Dict[str, Any]] = []
         self.bm25_index: Optional[BM25Okapi] = None
         self._load_bm25_corpus()
-
-        # If database is empty, check if we can migrate from existing ChromaDB
-        if self.count() == 0:
-            self._try_chroma_migration()
 
     def _init_db(self):
         with self.conn:
@@ -157,42 +193,6 @@ class KnowledgeIndexer:
         cursor.execute("SELECT COUNT(*) FROM chunks")
         row = cursor.fetchone()
         return row[0] if row else 0
-
-    def _try_chroma_migration(self):
-        chroma_dir = self.db_path.parent / "chroma_db"
-        if chroma_dir.exists():
-            try:
-                import chromadb
-                client = chromadb.PersistentClient(path=str(chroma_dir))
-                coll = client.get_collection("moodle_course_materials")
-                if coll.count() > 0:
-                    print(f"[Indexer] [INFO] Migrating {coll.count()} existing chunks from ChromaDB to SQLite...")
-                    res = coll.get(include=["documents", "metadatas", "embeddings"])
-                    if res and res["ids"]:
-                        records = []
-                        for cid, text, meta, emb in zip(res["ids"], res["documents"], res["metadatas"], res["embeddings"]):
-                            emb_bytes = np.array(emb, dtype=np.float32).tobytes()
-                            records.append((
-                                cid,
-                                text,
-                                str(meta.get("source", "")),
-                                str(meta.get("filename", "")),
-                                str(meta.get("course", "")),
-                                str(meta.get("semester", "")),
-                                int(meta.get("page", 1)),
-                                int(meta.get("chunk_index", 0)),
-                                emb_bytes
-                            ))
-                        with self.conn:
-                            self.conn.executemany("""
-                                INSERT OR REPLACE INTO chunks
-                                (id, text, source, filename, course, semester, page, chunk_index, embedding)
-                                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-                            """, records)
-                        print(f"[Indexer] [OK] Successfully migrated {len(records)} chunks to SQLite.")
-                        self._load_bm25_corpus()
-            except Exception as e:
-                print(f"[Indexer] [INFO] Chroma migration skipped: {e}")
 
     def _load_bm25_corpus(self):
         """Loads all existing documents from SQLite into BM25 memory."""
@@ -492,22 +492,34 @@ class KnowledgeIndexer:
 
         query_tokens = set(self._tokenize(query))
         
-        # 5. Intent Detection: Derivation Windowing
-        is_derivation = is_derivation_query(query)
+        # 5. Intent Detection: Derivation Windowing & Math Preservation
+        is_query_derivation = is_derivation_query(query)
+        covered_window_pages = set()
 
         final_results = []
-        for d_id in candidate_ids[:top_k]:
+        for d_id in candidate_ids:
+            if len(final_results) >= top_k:
+                break
+
             item = doc_store[d_id]
-            item["rrf_score"] = round(rrf_scores.get(d_id, 0.0), 5)
             meta = item["metadata"]
             source = meta.get("source")
             page = meta.get("page", 1)
+
+            # Avoid adding duplicate chunks already fully included in an earlier window of the same document
+            if source and (source, page) in covered_window_pages and len(final_results) > 0:
+                continue
+
+            item["rrf_score"] = round(rrf_scores.get(d_id, 0.0), 5)
 
             # Text pruning vs Derivation Window Expansion
             raw_text = item["text"]
             item["raw_text"] = raw_text
 
-            if is_derivation and source:
+            is_chunk_math = has_math_or_derivation_content(raw_text)
+            should_window = (is_query_derivation or is_chunk_math) and source
+
+            if should_window:
                 # Parent-Child Windowing: Fetch contiguous 3-page window (page - 1, page, page + 1)
                 try:
                     cursor = self.conn.cursor()
@@ -526,6 +538,7 @@ class KnowledgeIndexer:
                                 windowed_parts.append(f"\n<!-- Derivation Context: Page {cp} -->\n")
                                 current_p = cp
                             windowed_parts.append(ctext.strip())
+                            covered_window_pages.add((source, cp))
                         item["text"] = "\n".join(windowed_parts).strip()
                         item["is_derivation_window"] = True
                         item["window_pages"] = [p_start, page, p_end]
