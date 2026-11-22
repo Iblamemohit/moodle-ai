@@ -699,8 +699,31 @@ class CLISpinner:
             self.thread.join(timeout=1.0)
 
 
+def check_dependencies() -> bool:
+    """Verifies that all critical runtime dependencies are installed."""
+    critical_modules = [
+        ("pymupdf", "PyMuPDF"),
+        ("onnxruntime", "onnxruntime"),
+        ("rank_bm25", "rank_bm25"),
+        ("flashrank", "flashrank"),
+        ("tokenizers", "tokenizers")
+    ]
+    missing = []
+    for mod_name, pkg_name in critical_modules:
+        try:
+            __import__(mod_name)
+        except ImportError:
+            missing.append(pkg_name)
+    if missing:
+        print(f"[Dependency Warning] Missing required packages: {', '.join(missing)}")
+        print("Run: pip install -r requirements.txt (or bash setup.sh)")
+        return False
+    return True
+
+
 # CLI Handler for direct terminal invocation
 def main():
+    check_dependencies()
     if len(sys.argv) < 2:
         print(json.dumps({
             "status": "error",
@@ -783,20 +806,26 @@ def main():
 
     elif cmd == "ask":
         if not pos_args:
-            print(json.dumps({"status": "error", "message": "Usage: /ask \"<query>\""}, indent=2))
+            print(json.dumps({"status": "error", "message": "Usage: /ask \"<query>\" [--no-cache]"}, indent=2))
             return
         q = " ".join(pos_args)
+        no_cache = "--no-cache" in flags
         with CLISpinner("Searching knowledge base..."):
-            res = moodle_ask(q)
+            res = moodle_ask(q, use_cache=not no_cache)
         if "--json" in flags:
             print(json.dumps(res, indent=2))
         else:
             print(f"\n--- Results for: '{res['query']}' ---")
-            for item in res.get("moodle_context", []):
+            m_ctx = res.get("moodle_context", [])
+            v_slides = res.get("visual_fallback", {}).get("rendered_pages", [])
+            f_ctx = res.get("fallback_context", [])
+            if not m_ctx and not v_slides and not f_ctx:
+                print("No matching course materials found for this query.")
+            for item in m_ctx:
                 print(f"\n{item['citation']}:\n{item['text'][:350]}...")
-            for vp in res.get("visual_fallback", {}).get("rendered_pages", []):
+            for vp in v_slides:
                 print(f"\n📸 Slide p.{vp['page']} from {vp['filename']}: {vp['image_path']}")
-            for item in res.get("fallback_context", []):
+            for item in f_ctx:
                 print(f"\n{item['citation']}:\n{item['summary'][:350]}...")
 
     elif cmd == "quiz":

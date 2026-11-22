@@ -557,11 +557,21 @@ class KnowledgeIndexer:
             overlap = len(query_tokens.intersection(doc_tokens)) if query_tokens else 0
             overlap_ratio = overlap / len(query_tokens) if query_tokens else 0.0
 
-            # Confidence determination:
-            # 1. FlashRank cross-encoder rerank_score >= 0.20, OR
-            # 2. Cosine similarity >= 0.50, OR
-            # 3. Keyword overlap >= 50% and BM25 >= 3.0
-            is_conf = (item["rerank_score"] >= 0.20) or (item["cosine_similarity"] >= 0.50) or (overlap_ratio >= 0.5 and item["bm25_score"] >= 3.0)
+            # Confidence determination preventing cross-encoder suppression on mathematical/engineering chunks:
+            # TinyBERT cross-encoders often assign < 0.05 to long formula-dense STEM passages.
+            rerank_sc = item.get("rerank_score")
+            cos_sc = item.get("cosine_similarity", 0.0)
+            bm25_sc = item.get("bm25_score", 0.0)
+
+            if rerank_sc is not None and rerank_sc > 0:
+                if rerank_sc >= 0.15 or cos_sc >= 0.60 or (bm25_sc >= 5.0 and cos_sc >= 0.40):
+                    is_conf = True
+                elif rerank_sc < 0.02 and cos_sc < 0.50:
+                    is_conf = False
+                else:
+                    is_conf = (cos_sc >= 0.45) or (overlap_ratio >= 0.4 and bm25_sc >= 2.0 and cos_sc >= 0.25)
+            else:
+                is_conf = (cos_sc >= 0.45) or (overlap_ratio >= 0.4 and bm25_sc >= 2.0 and cos_sc >= 0.25)
             item["is_confident"] = is_conf
             item["keyword_overlap_ratio"] = round(overlap_ratio, 2)
             final_results.append(item)

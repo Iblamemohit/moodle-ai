@@ -939,7 +939,27 @@ def sync_moodle_courses(
                 return
             processed_files.add(file_path_str)
 
-        if not is_new and str(p.resolve()) in known_catalog.get("paths", set()):
+        # Do NOT rely solely on known_catalog["paths"] early-return, which erroneously skips
+        # files previously cataloged as "[WAIT] Pending Parse" on subsequent sync runs.
+        # Instead, verify if parsed markdown already exists with a matching content hash:
+        if user_files_dir and (p == user_files_dir or user_files_dir in p.parents):
+            sub_rel = p.relative_to(user_files_dir)
+            rel_path = Path("User_Files") / sub_rel
+        else:
+            try:
+                rel_path = p.relative_to(output_dir)
+            except ValueError:
+                rel_path = Path(p.name)
+
+        md_dest = Path(parsed_dir) / rel_path.with_suffix('.md')
+        cached_hash = parser.hashes.get(str(rel_path))
+        from src.parser import compute_file_hash
+        try:
+            curr_hash = compute_file_hash(p)
+        except Exception:
+            curr_hash = None
+
+        if not is_new and cached_hash == curr_hash and md_dest.exists():
             return
 
         ext = p.suffix.lower()

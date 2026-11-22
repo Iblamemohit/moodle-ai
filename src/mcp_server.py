@@ -59,6 +59,8 @@ def moodle_search_and_ask(query: str, doc_filter: Optional[str] = None, course_f
         for chunk in res["moodle_context"]:
             output.append(f"\n> **Source**: {chunk['citation']}")
             output.append(chunk["text"])
+    elif not rendered_pages:
+        output.append("\nNo relevant course materials found for this query.")
 
     rendered_pages = res.get("visual_fallback", {}).get("rendered_pages", [])
     if res.get("visual_fallback", {}).get("triggered") and rendered_pages:
