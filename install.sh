@@ -1,20 +1,4 @@
 #!/usr/bin/env bash
-# Universal 1-Click Installer for moodle-ai
-set -e
-
+# Universal setup launcher delegating to setup.sh
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-cd "$SCRIPT_DIR"
-
-echo "== moodle-ai Universal Setup =="
-
-# Detect available python3 binary
-if command -v python3 &>/dev/null; then
-    PY_BIN="python3"
-elif command -v python &>/dev/null; then
-    PY_BIN="python"
-else
-    echo "[ERROR] Python 3 was not found on your system. Please install Python 3.10+ and re-run."
-    exit 1
-fi
-
-"$PY_BIN" "$SCRIPT_DIR/install.py"
+exec bash "$SCRIPT_DIR/setup.sh" "$@"

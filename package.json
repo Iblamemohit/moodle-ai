@@ -1,0 +1,25 @@
+{
+  "name": "moodle-ai",
+  "version": "1.2.0",
+  "description": "Master AI Study Agent & Hybrid RAG Engine for Course Slides and Notes",
+  "main": "bin/moodle-ai.js",
+  "bin": {
+    "moodle-ai": "bin/moodle-ai.js"
+  },
+  "scripts": {
+    "setup": "bash setup.sh",
+    "sync": ".venv/bin/python moodle.py /sync",
+    "ask": ".venv/bin/python moodle.py /ask",
+    "test": ".venv/bin/python -m unittest discover tests",
+    "mcp": ".venv/bin/python src/mcp_server.py"
+  },
+  "keywords": [
+    "moodle",
+    "rag",
+    "study-agent",
+    "mcp",
+    "antigravity"
+  ],
+  "author": "Mohit",
+  "license": "MIT"
+}

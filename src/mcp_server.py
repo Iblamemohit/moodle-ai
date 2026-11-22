@@ -26,7 +26,6 @@ from src.agent_tools import (
     moodle_remove_custom_url,
     moodle_list_custom_urls,
     update_moodle_ai,
-    moodle_diagram,
     clean_output_text,
     get_course_slide as get_course_slide_impl
 )
@@ -161,20 +160,6 @@ def update_moodle_ai_version() -> str:
     """Pulls latest code updates from GitHub and refreshes virtual environment dependencies."""
     res = update_moodle_ai()
     return json.dumps(res, indent=2)
-
-
-@mcp.tool()
-def generate_engineering_diagram(diagram_type: str, params: Optional[str] = None) -> CallToolResult:
-    """Generates 300 DPI engineering diagrams (sfd_bmd, is456_stress_block, cpm_network); returns multimodal diagram & embed link."""
-    params_dict = None
-    if params:
-        try:
-            params_dict = json.loads(params)
-        except Exception:
-            params_dict = None
-    res = moodle_diagram(diagram_type=diagram_type, params=params_dict)
-    summary = res.get("summary_markdown") or (f"### {res.get('title', 'Engineering Diagram')}\n![{res.get('title')}]({res.get('image_url')})\n- **Image Path**: `{res.get('image_path')}`" if res.get("status") == "success" else json.dumps(res, indent=2))
-    return _tool_result(summary, res)
 
 
 if __name__ == "__main__":

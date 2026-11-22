@@ -215,7 +215,7 @@ def update_moodle_ai() -> Dict[str, Any]:
     if req_file.exists():
         try:
             subprocess.run(
-                [sys.executable, "-m", "pip", "install", "-q", "-r", str(req_file)],
+                [sys.executable, "-m", "pip", "install", "--no-cache-dir", "-q", "-r", str(req_file)],
                 cwd=str(ws),
                 capture_output=True,
                 check=True
@@ -462,73 +462,6 @@ def moodle_quiz(course: Optional[str] = None, num_questions: int = 3) -> Dict[st
         "num_topics": len(sampled_materials),
         "materials": sampled_materials
     }
-
-
-
-
-def moodle_diagram(
-    diagram_type: str,
-    params: Optional[Dict[str, Any]] = None,
-    filename: Optional[str] = None
-) -> Dict[str, Any]:
-    """
-    [Tool: /diagram] Generates high-resolution publication-quality (300 DPI) engineering diagrams.
-    Strict ban on ASCII art diagrams.
-    Supported types: 'sfd_bmd' (CVL341), 'is456_stress_block' (CVL243), 'cpm_network' (CVL245).
-    """
-    from src.diagram_generator import generate_sfd_bmd, generate_is456_stress_block, generate_cpm_network
-    params = params or {}
-    d_type = diagram_type.lower().replace("-", "_")
-
-    if d_type in ("sfd_bmd", "sfd", "bmd", "beam", "shear_force"):
-        res = generate_sfd_bmd(
-            beam_type=params.get("beam_type", "simply_supported"),
-            length=float(params.get("length", 6.0)),
-            loads=params.get("loads"),
-            filename=filename,
-            title=params.get("title")
-        )
-    elif d_type in ("is456_stress_block", "is456", "rcc", "stress_block", "beam_section"):
-        res = generate_is456_stress_block(
-            b=float(params.get("b", 250.0)),
-            d=float(params.get("d", 450.0)),
-            fck=float(params.get("fck", 25.0)),
-            fy=float(params.get("fy", 415.0)),
-            Ast=float(params.get("Ast", 942.0)),
-            D=float(params.get("D")) if params.get("D") else None,
-            xu=float(params.get("xu")) if params.get("xu") else None,
-            filename=filename
-        )
-    elif d_type in ("cpm_network", "cpm", "network", "aon", "critical_path"):
-        res = generate_cpm_network(
-            activities=params.get("activities"),
-            filename=filename,
-            title=params.get("title")
-        )
-    else:
-        return {
-            "status": "error",
-            "message": f"Unsupported diagram type '{diagram_type}'. Supported types: 'sfd_bmd', 'is456_stress_block', 'cpm_network'."
-        }
-
-    if isinstance(res, dict) and res.get("status") == "success":
-        from src.visual_fallback import get_image_base64
-        img_p = res.get("image_path")
-        if img_p:
-            res["image_base64"] = get_image_base64(img_p)
-        lines = [
-            f"### {res.get('title', 'Engineering Diagram')}",
-            f"![{res.get('title')}]({res.get('image_url')})",
-            f"- **Image Path**: `{res.get('image_path')}`",
-            f"- **Markdown Embed**: `![{res.get('title')}]({res.get('image_url')})`"
-        ]
-        if "critical_path" in res:
-            lines.append(f"- **Critical Path**: {' -> '.join(res['critical_path'])} (Duration: {res.get('project_duration')})")
-        if "max_bending_moment" in res:
-            lines.append(f"- **Max Bending Moment**: {res.get('max_bending_moment')} kN·m at x = {res.get('peak_location_m')} m")
-        res["summary_markdown"] = "\n".join(lines)
-
-    return res
 
 
 def get_course_slide(
@@ -794,9 +727,7 @@ def main():
             "user_files_folder": "user_files/ (drop custom PDFs, slides, and notes here)",
             "available_commands": [
                 "/setup", "/sync [sem] [--course C] [--quick]", "/slide <course> <doc> <page> [--raw]",
-                "/list", "/ask <query>", "/quiz [course]", "/diagram <type> [params]",
-                "/pyq <pdf> <course> [q_num]", "/drill <course> <topic> [--step N] [--answer A]",
-                "/cheatsheet <course>", "/triage <course>", "/change-sync [sem]",
+                "/list", "/ask <query>", "/quiz [course]", "/change-sync [sem]",
                 "/add-custom-url <URL> [label]", "/remove-custom-url <URL>", "/list-custom-urls",
                 "/update-version", "/install"
             ]
@@ -874,27 +805,6 @@ def main():
             res = moodle_quiz(course)
         print(json.dumps(res, indent=2))
 
-    elif cmd == "diagram":
-        d_type = pos_args[0] if pos_args else "sfd_bmd"
-        params_obj = None
-        fname = None
-        for i, a in enumerate(args):
-            if a == "--filename" and i + 1 < len(args):
-                fname = args[i + 1]
-            elif not a.startswith("-") and a != d_type and params_obj is None:
-                try:
-                    params_obj = json.loads(a)
-                except Exception:
-                    pass
-        with CLISpinner(f"Generating {d_type} diagram..."):
-            res = moodle_diagram(diagram_type=d_type, params=params_obj, filename=fname)
-        if "--json" in flags or res.get("status") != "success":
-            print(json.dumps(res, indent=2))
-        else:
-            print(f"\n📊 **{res.get('title', 'Diagram')}**\n![{res.get('title')}]({res.get('image_url')})\nImage File: {res.get('image_path')}")
-            if "critical_path" in res:
-                print(f"Critical Path: {' -> '.join(res['critical_path'])} | Duration: {res.get('project_duration')}")
-
     elif cmd in ("slide", "get-slide"):
         if len(pos_args) < 3:
             print(json.dumps({"status": "error", "message": "Usage: /slide <course_code> <document_name> <page_number> [--raw] [--no-image]"}, indent=2))
@@ -914,14 +824,17 @@ def main():
             res = update_moodle_ai()
         print(json.dumps(res, indent=2))
 
-    elif cmd in ("install", "configure"):
-        import install
-        install.main()
+    elif cmd in ("install", "configure", "setup-all"):
+        setup_script = Path(__file__).resolve().parent.parent / "setup.sh"
+        if setup_script.exists():
+            subprocess.run(["bash", str(setup_script)], check=False)
+        else:
+            print(json.dumps({"status": "info", "message": "Run 'bash setup.sh' or 'npm run setup' to configure moodle-ai."}, indent=2))
 
     else:
         print(json.dumps({
             "status": "error",
-            "message": f"Unknown command '{raw_cmd}'. Usage: python moodle.py </setup | /sync | /list | /ask | /quiz | /slide | /drill | /cheatsheet | /triage | /change-sync | /install>"
+            "message": f"Unknown command '{raw_cmd}'. Usage: python moodle.py </setup | /sync | /list | /ask | /quiz | /slide | /change-sync | /add-custom-url | /remove-custom-url | /list-custom-urls | /update-version>"
         }, indent=2))
 
 

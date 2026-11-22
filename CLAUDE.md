@@ -1,8 +1,8 @@
 # CLAUDE.md — Moodle AI Instructions
 
 ## Quick Start
-- Run universal setup: `python install.py` (or `./install.sh`)
-- Master command: `python moodle.py /moodle-ai`
+- Run universal setup: `bash setup.sh` (or `npm run setup`)
+- Master command: `python moodle.py /moodle-ai` (or `npx moodle-ai /moodle-ai`)
 - Run MCP server: `python src/mcp_server.py`
 
 ## Commands
@@ -15,8 +15,7 @@
 - `/list`: Display all courses and indexed documents from `list.md`.
 - `/ask <question>`: Hybrid search course knowledge base with slide citations.
 - `/quiz [course]`: Generate practice quiz context.
-
-- `/install`: Universal 1-click installer.
+- `/slide <course> <doc> <page> [--raw]`: Precision slide extraction with text & PNG render.
 
 ## Citations
 Format citations using dual links: `[Course / File.pdf (Page X)](file:///absolute/path/to/file.pdf) ([Markdown](file:///absolute/path/to/parsed/file.md))`.

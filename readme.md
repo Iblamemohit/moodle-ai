@@ -52,21 +52,20 @@ Getting started takes less than a minute with zero manual friction:
 If you prefer running installation from the terminal inside the repository:
 
 ```bash
-# Option A: Python Universal Installer (Recommended)
-python3 install.py
+# Option A: Zero-Bloat Fast Setup (Recommended)
+bash setup.sh
 
-# Option B: Shell Script
-./install.sh
-
-# Option C: CLI Tool
-python3 moodle.py /install
+# Option B: Node / NPX Setup
+npm run setup
+# or run commands directly:
+npx moodle-ai /moodle-ai
 ```
 
 ---
 
 ## Supported Environments & Zero-Config IDE Setup
 
-`install.py` auto-detects and configures all your installed developer tools:
+`setup.sh` auto-detects and configures all your installed developer tools with zero global cache overhead:
 
 | Environment | Configuration Path | What Works |
 | :--- | :--- | :--- |
@@ -211,31 +210,24 @@ python moodle.py /triage CVL341
 
 ```text
 moodle-study-tool/
-├── moodle.py                  # Minimal 5-line CLI entrypoint
-├── memory.md                  # Native student state & exam schedule engine
-├── install.py                 # Universal 1-click auto-configurator
-├── install.sh                 # Fast setup bash script
+├── moodle.py                  # Minimal CLI entrypoint
+├── package.json               # Node / NPX bin wrapper & task scripts
+├── bin/moodle-ai.js           # Lightweight CLI bridge
+├── setup.sh                   # Zero-bloat fast installer & MCP configurator
 ├── requirements.txt           # Production dependencies
-├── requirements-dev.txt       # Dev & profiling dependencies (tiktoken)
 ├── list.md                    # Auto-generated catalog of indexed course materials
 ├── AGENTS.md / CLAUDE.md      # Assistant guidelines & instructions
 ├── src/                       # Core application packages
 │   ├── agent_tools.py         # Study tools implementation & CLI dispatcher
 │   ├── mcp_server.py          # MCP 2.x standard server exposing tools
-│   ├── memory_manager.py      # Programmatic memory manager for memory.md
-│   ├── self_learner.py        # Persistent learning, mastery & retrieval boosting
-│   ├── diagram_generator.py   # Publication-grade 300 DPI diagram generator
 │   ├── parser.py              # PyMuPDF4LLM Markdown parser with SHA-256 caching
 │   ├── indexer.py             # SQLite + BM25 Hybrid Retriever with RRF ranking
 │   ├── embeddings.py          # Standalone ONNX runtime (all-MiniLM-L6-v2)
 │   ├── visual_fallback.py     # Multimodal PDF slide diagram renderer
-│   ├── query_cache.py         # High-speed SQLite query & embedding cache
-│   ├── scraper_sync.py        # Live multi-source indexing coordinator
 │   ├── scraper.py             # Moodle async scraper internals
 │   ├── custom_scraper.py      # Web scraper for external course sites & HTML slides
-│   ├── list_manager.py        # Course catalog & Markdown link generator
-│   └── web_search.py          # Wikipedia REST fallback retrieval
-├── notes/                     # Curated study notes, guides & solution PDFs
+│   └── list_manager.py        # Course catalog & Markdown link generator
+├── notes/                     # Curated study notes & guides
 ├── output/                    # Downloaded course slides & generated assets
 │   ├── diagrams/              # Generated 300 DPI diagrams & high-res slide crops
 │   └── cheatsheets/           # Auto-compiled course cheat sheets

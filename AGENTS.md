@@ -13,21 +13,18 @@ This repository contains an academic study assistant, streaming Moodle scraper, 
 3. **Hybrid RAG Engine (`src/indexer.py`)**:
    - Dense retrieval (SQLite + ONNX `all-MiniLM-L6-v2`) + Lexical retrieval (BM25) with Reciprocal Rank Fusion (RRF).
    - Parent-Child Windowing for engineering derivations (`is_derivation_query`) retrieving contiguous 3-page chunks without mid-equation truncation.
-4. **Diagram Generator (`src/diagram_generator.py`)**:
-   - Generates publication-grade 300 DPI engineering diagrams for SFD/BMD, IS 456 stress blocks, and CPM AON networks.
-5. **Tools & CLI (`moodle.py` & `src/agent_tools.py`)**:
-   - Entry point for `/moodle-ai`, `/setup`, `/sync`, `/list`, `/ask`, `/quiz`, `/diagram`, `/pyq`, `/drill`, `/cheatsheet`, `/triage`, `/add-custom-url`, `/remove-custom-url`, `/list-custom-urls`, `/update-version`, `/install`.
-6. **Model Context Protocol Server (`src/mcp_server.py`)**:
+4. **Tools & CLI (`moodle.py` & `src/agent_tools.py`)**:
+   - Entry point for `/moodle-ai`, `/setup`, `/sync`, `/list`, `/ask`, `/quiz`, `/slide`, `/add-custom-url`, `/remove-custom-url`, `/list-custom-urls`, `/update-version`.
+5. **Model Context Protocol Server (`src/mcp_server.py`)**:
    - MCP 2.x standard server exposing tools (`moodle-ai`) to Claude Desktop, Cursor, Antigravity, and Codex.
-7. **Page-Level Visual Fallback (`src/visual_fallback.py`)**:
+6. **Page-Level Visual Fallback (`src/visual_fallback.py`)**:
    - Detects visual queries and renders candidate PDF slide pages to crisp PNGs (`page.get_pixmap()`) cached in `data/visual_cache/` for multimodal LLMs to inspect diagrams and charts.
 
 ## Critical Rule: Strict Ban on ASCII Art Diagrams
 - **NEVER** output engineering diagrams, structural diagrams (SFD/BMD), beam deflections, IS 456 stress blocks, CPM networks, or biological pathways using monospace text, slashes (`/`, `\`), pipes (`|`), or underscores (`_`).
 - **Allowed Visual Methods Only**:
-  1. **Direct High-Res Slide Crop**: Use PyMuPDF to extract and crop diagram regions or pages directly from course PDFs as crisp PNGs into `data/visual_cache/`.
-  2. **Programmatic Diagram Generator (`src/diagram_generator.py` / `/diagram`)**: Render publication-grade 300 DPI PNGs saved to `output/diagrams/` and embed them as `![Title](file:///path/to/img.png)`.
-  3. **Native Mermaid**: For flowcharts and simple logic diagrams.
+  1. **Direct High-Res Slide Crop**: Call `get_course_slide` or `/slide` to view the original professor's diagram as a crisp PNG from course PDFs in `data/visual_cache/`.
+  2. **Host Environment Code / Generative UI**: Generate diagrams dynamically using Mermaid charts, Antigravity generative UI, or on-demand Python code execution.
 
 ## Math & Derivation Standards
 - **LaTeX Math Standard**: Always format equations using standard LaTeX: `$ ... $` for inline math and `$$ ... $$` for display equations.
@@ -54,9 +51,8 @@ All commands are executed via `python moodle.py`:
 - `python moodle.py /list [--regen]`: Output document catalog and structure.
 - `python moodle.py /ask "<query>"`: Hybrid search with citations and visual fallback.
 - `python moodle.py /quiz [course_code]`: Retrieve foundational concepts for practice exams.
-- `python moodle.py /diagram <type> [params_json]`: Generate publication-grade 300 DPI diagram (`sfd_bmd`, `is456_stress_block`, `cpm_network`).
 - `python moodle.py /update-version`: Pull latest updates from GitHub and refresh `.venv` dependencies.
-- `python install.py`: Universal 1-click auto-configuration.
+- `bash setup.sh` / `npm run setup`: Fast 1-click zero-cache setup and MCP configuration.
 
 The LLM performs tutoring, Socratic drills, formula cheatsheets, exam triage, and past-year paper solutions dynamically in the chat by querying `/ask` and `/slide`.
 

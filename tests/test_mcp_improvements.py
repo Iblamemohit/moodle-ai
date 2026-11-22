@@ -7,8 +7,7 @@ from pathlib import Path
 from src.visual_fallback import get_image_base64, render_full_slide_image
 from src.agent_tools import (
     get_course_slide,
-    sync_moodle,
-    moodle_diagram
+    sync_moodle
 )
 from src.indexer import (
     is_derivation_query,
@@ -109,12 +108,11 @@ class TestMCPImprovements(unittest.TestCase):
 
     def test_dual_format_returns(self):
         """Validates that analytical tools return both summary_markdown and structured parameters."""
-        # Diagram Tool
-        diag_res = moodle_diagram("sfd_bmd")
-        self.assertEqual(diag_res["status"], "success")
-        self.assertIn("summary_markdown", diag_res)
-        self.assertIn("max_bending_moment", diag_res)
-        self.assertIn("reactions", diag_res)
+        slide_res = get_course_slide("CVL341", "Lecture8", 1)
+        self.assertEqual(slide_res["status"], "success")
+        self.assertIn("summary_markdown", slide_res)
+        self.assertIn("document_name", slide_res)
+        self.assertIn("page_number", slide_res)
 
     def test_contiguous_derivation_math_classification(self):
         """Validates detection of math, matrix, and derivation keywords."""
