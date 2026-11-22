@@ -1,10 +1,13 @@
 {
   "mcpServers": {
     "moodle-ai": {
-      "command": "/Users/mohit/Documents/moodle-study-tool/.venv/bin/python",
+      "command": "${workspaceFolder}/.venv/bin/python",
       "args": [
-        "/Users/mohit/Documents/moodle-study-tool/src/mcp_server.py"
-      ]
+        "${workspaceFolder}/src/mcp_server.py"
+      ],
+      "env": {
+        "MOODLE_AI_ROOT": "${workspaceFolder}"
+      }
     }
   }
 }

@@ -34,6 +34,8 @@ class TestExamAssistantFeatures(unittest.TestCase):
         self.assertIn("trigger_moodle_sync", tools)
         self.assertIn("list_available_courses_and_documents", tools)
         self.assertIn("generate_practice_quiz_context", tools)
+        self.assertIn("get_workspace_info", tools)
+        self.assertIn("switch_active_workspace", tools)
 
 
 if __name__ == "__main__":

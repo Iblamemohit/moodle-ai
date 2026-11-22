@@ -162,5 +162,49 @@ def update_moodle_ai_version() -> str:
     return json.dumps(res, indent=2)
 
 
+@mcp.tool()
+def get_workspace_info() -> str:
+    """Returns the active workspace directory (moodle-ai vs moodle-study-tool), database location, and available workspaces."""
+    from src.config import get_config, get_workspace_dir, discover_available_workspaces
+    active_ws = get_workspace_dir()
+    cfg = get_config()
+    db_file = Path(cfg["db_path"])
+    available = discover_available_workspaces()
+    info = {
+        "status": "success",
+        "active_workspace": str(active_ws),
+        "workspace_name": active_ws.name,
+        "is_production": "moodle-ai" in active_ws.name.lower(),
+        "database_path": cfg["db_path"],
+        "database_exists": db_file.exists(),
+        "database_size_bytes": db_file.stat().st_size if db_file.exists() else 0,
+        "env_file": cfg["env_path"],
+        "env_configured": bool(cfg.get("user")),
+        "discovered_workspaces": available
+    }
+    return json.dumps(info, indent=2)
+
+
+@mcp.tool()
+def switch_active_workspace(workspace_path: str) -> str:
+    """Dynamically switches the active workspace at runtime without restarting the MCP server."""
+    from src.config import set_active_workspace, get_config
+    try:
+        new_ws = set_active_workspace(workspace_path)
+        cfg = get_config()
+        return json.dumps({
+            "status": "success",
+            "message": f"Active workspace successfully switched to: {new_ws}",
+            "workspace_name": new_ws.name,
+            "database_path": cfg["db_path"],
+            "database_exists": Path(cfg["db_path"]).exists()
+        }, indent=2)
+    except Exception as e:
+        return json.dumps({
+            "status": "error",
+            "message": f"Failed to switch workspace: {e}"
+        }, indent=2)
+
+
 if __name__ == "__main__":
     mcp.run()

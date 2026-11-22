@@ -82,28 +82,50 @@ is_win = platform.system() == "Windows"
 venv_py = root_dir / (".venv/Scripts/python.exe" if is_win else ".venv/bin/python")
 mcp_script = root_dir / "src/mcp_server.py"
 
-server_entry = {
+# Dynamic workspace-relative entry for Cursor & VS Code
+workspace_entry = {
+    "command": "${workspaceFolder}/.venv/Scripts/python.exe" if is_win else "${workspaceFolder}/.venv/bin/python",
+    "args": ["${workspaceFolder}/src/mcp_server.py"],
+    "env": {
+        "MOODLE_AI_ROOT": "${workspaceFolder}"
+    }
+}
+
+# Dynamic entry for Antigravity IDE (uses ${workspace.path})
+antigravity_entry = {
     "command": str(venv_py),
-    "args": [str(mcp_script)]
+    "args": [str(mcp_script)],
+    "env": {
+        "MOODLE_AI_ROOT": "${workspace.path}"
+    }
+}
+
+# Global entry with fallback to current root
+global_entry = {
+    "command": str(venv_py),
+    "args": [str(mcp_script)],
+    "env": {
+        "MOODLE_AI_ROOT": str(root_dir)
+    }
 }
 
 targets = [
-    root_dir / ".cursor/mcp.json",
-    root_dir / ".vscode/mcp.json",
-    Path.home() / ".cursor/mcp.json",
-    Path.home() / ".gemini/config/mcp_config.json"
+    (root_dir / ".cursor/mcp.json", workspace_entry),
+    (root_dir / ".vscode/mcp.json", workspace_entry),
+    (Path.home() / ".cursor/mcp.json", global_entry),
+    (Path.home() / ".gemini/config/mcp_config.json", antigravity_entry)
 ]
 
 if platform.system() == "Darwin":
-    targets.append(Path.home() / "Library/Application Support/Claude/claude_desktop_config.json")
+    targets.append((Path.home() / "Library/Application Support/Claude/claude_desktop_config.json", global_entry))
 elif platform.system() == "Windows":
     appdata = os.getenv("APPDATA")
     if appdata:
-        targets.append(Path(appdata) / "Claude/claude_desktop_config.json")
+        targets.append((Path(appdata) / "Claude/claude_desktop_config.json", global_entry))
 else:
-    targets.append(Path.home() / ".config/Claude/claude_desktop_config.json")
+    targets.append((Path.home() / ".config/Claude/claude_desktop_config.json", global_entry))
 
-for target in targets:
+for target, entry in targets:
     try:
         target.parent.mkdir(parents=True, exist_ok=True)
         data = {}
@@ -117,7 +139,7 @@ for target in targets:
             data = {}
         if "mcpServers" not in data or not isinstance(data["mcpServers"], dict):
             data["mcpServers"] = {}
-        data["mcpServers"]["moodle-ai"] = server_entry
+        data["mcpServers"]["moodle-ai"] = entry
         with open(target, "w", encoding="utf-8") as f:
             json.dump(data, f, indent=2)
         print(f"  [OK] Registered MCP server in: {target}")

@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import Dict, Any, List, Optional, Union
 import pymupdf
 
-from src.config import WORKSPACE_DIR
+from src.config import get_workspace_dir
 
 # Visual trigger keywords and patterns
 VISUAL_KEYWORDS = {
@@ -94,7 +94,7 @@ def render_slide(
         if not path.exists() or path.suffix.lower() != ".pdf":
             return None
 
-        cache_dir = cache_dir or (Path(WORKSPACE_DIR) / "data" / "visual_cache")
+        cache_dir = cache_dir or (get_workspace_dir() / "data" / "visual_cache")
         cache_dir.mkdir(parents=True, exist_ok=True)
 
         safe_name = re.sub(r"[^\w\-.]", "_", path.stem)
@@ -220,7 +220,7 @@ def prune_visual_cache(max_files: int = 150, cache_dir: Optional[Path] = None) -
     """
     try:
         if cache_dir is None:
-            cache_dir = Path(WORKSPACE_DIR) / "data" / "visual_cache"
+            cache_dir = get_workspace_dir() / "data" / "visual_cache"
         if not cache_dir.exists():
             return 0
         png_files = sorted(cache_dir.glob("*.png"), key=lambda p: p.stat().st_mtime)
